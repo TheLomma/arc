@@ -198,7 +198,7 @@ function PWAInstallButton({ installPrompt, installed, triggerInstall }) {
       return () => clearInterval(t);
     }, [doFetch]);
 
-    return { liveData, fetchStatus, lastFetch, refetch: doFetch };
+    return { liveData, fetchStatus, lastFetch };
   }
 
   function LiveStatusBadge({ fetchStatus, lastFetch }) {
@@ -254,12 +254,6 @@ function ActiveCard({ item, favs = [], toggleFav = () => {}, onToast }) {
       return diff;
     } catch { return 25 * 60; }
   };
-
-  const endTimeLabel = (() => {
-    try {
-      return (item.timeRange.split("\u2013")[1]?.trim() || item.timeRange.split("-")[1]?.trim() || "");
-    } catch { return ""; }
-  })();
 
   const [secs, setSecs] = useState(getEndSecs);
 
@@ -795,15 +789,6 @@ function WeekView({ favs, toggleFav, onToast }) {
     ? slots.filter(s => s.entries.some(e => favs.includes(e.condition)))
     : slots.filter(s => s.entries.length > 0);
 
-  // sourceLabel war toter Code (nirgends aufgerufen) — entfernt
-    const _sourceLabel = (source) => {
-    if (source === "live")      return <span className="text-green-400 text-xs font-bold flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block"></span>LIVE</span>;
-    if (source === "upcoming")  return <span className="text-orange-400 text-xs">⏳ Bald</span>;
-    if (source === "history")   return <span className="text-gray-500 text-xs">✓ Gelaufen</span>;
-    if (source === "simulated") return <span className="text-gray-700 text-xs italic">Vorschau</span>;
-    return null;
-  };
-
   return (
     <div className="flex flex-col gap-4">
       <p className="text-gray-500 text-xs">Kalender-Übersicht der nächsten 7 Tage — alle Conditions stundenweise.</p>
@@ -1248,7 +1233,58 @@ function LoadoutView() {
   );
 }
 
-// ── Sticky Countdown Banner ─────────────────────────────────────────────────────
+// ── Swipe-Navigation Hook ─────────────────────────────────────────────────────
+  function useSwipeNav(tabs, activeTab, setActiveTab) {
+    const touchStartX = useRef(null);
+  
+
+    const onTouchStart = useCallback((e) => {
+      touchStartX.current = e.touches[0].clientX;
+
+    }, []);
+
+    const onTouchEnd = useCallback((e) => {
+      if (touchStartX.current === null) return;
+      const dx = e.changedTouches[0].clientX - touchStartX.current;
+      const dy = e.changedTouches[0].clientY - touchStartY.current;
+      // Only horizontal swipes (dx > dy to avoid scroll interference)
+      if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      const currentIdx = tabs.indexOf(activeTab);
+      if (dx < 0 && currentIdx < tabs.length - 1) {
+        setActiveTab(tabs[currentIdx + 1]); // swipe left → next tab
+      } else if (dx > 0 && currentIdx > 0) {
+        setActiveTab(tabs[currentIdx - 1]); // swipe right → prev tab
+      }
+      touchStartX.current = null;
+      touchStartY.current = null;
+    }, [tabs, activeTab, setActiveTab]);
+
+    return { onTouchStart, onTouchEnd };
+  }
+
+  // ── Swipe-Navigation Hook ─────────────────────────────────────────────────
+  function useSwipeNav(tabs, activeTab, setActiveTab) {
+    const touchStartX = useRef(null);
+    const touchStartY = useRef(null);
+    const onTouchStart = useCallback((e) => {
+      touchStartX.current = e.touches[0].clientX;
+      touchStartY.current = e.touches[0].clientY;
+    }, []);
+    const onTouchEnd = useCallback((e) => {
+      if (touchStartX.current === null) return;
+      const dx = e.changedTouches[0].clientX - touchStartX.current;
+      const dy = e.changedTouches[0].clientY - touchStartY.current;
+      if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      const currentIdx = tabs.indexOf(activeTab);
+      if (dx < 0 && currentIdx < tabs.length - 1) setActiveTab(tabs[currentIdx + 1]);
+      else if (dx > 0 && currentIdx > 0) setActiveTab(tabs[currentIdx - 1]);
+      touchStartX.current = null;
+      touchStartY.current = null;
+    }, [tabs, activeTab, setActiveTab]);
+    return { onTouchStart, onTouchEnd };
+  }
+
+  // ── Sticky Countdown Banner ─────────────────────────────────────────────────────
   function StickyCountdownBanner({ liveData, favs }) {
     const upcoming = liveData?.upcoming || SCRAPED_DATA.upcoming;
     const active   = liveData?.active   || SCRAPED_DATA.active;
@@ -1816,7 +1852,7 @@ function DiscordView() {
           { name: "📍 Karte",   value: item?.map || "Spaceport",          inline: true },
           { name: "🕒 Uhrzeit", value: item?.timeRange || "11:00 – 12:00", inline: true },
         ],
-        footer: { text: "ARC Twix v2.5 · arcraiders.com" },
+        footer: { text: "ARC Twix v2.6 · arcraiders.com" },
         timestamp: new Date().toISOString(),
       }],
     };
@@ -2403,7 +2439,7 @@ function useAlarmTimer({ favs, liveData, notifSettings, soundEnabled, addToast }
 
   useEffect(() => {
     const check = () => {
-      if (!notifSettings.enabled && !notifSettings.alarmPopup) return; // respect settings
+      if (!notifSettings.enabled) return; // respect settings
       const threshold = (notifSettings.minutesBefore || 15) * 60; // seconds
       const upcoming = liveData.upcoming;
 
@@ -2736,7 +2772,9 @@ export default function App() {
     return () => clearInterval(interval);
   }, [refresh]);
 
-  const maps = ["all", ...Object.keys(MAP_COLORS)];
+  const TAB_IDS = ["main","schedule","history","maps","loot","loadout","session","squad","discord","notes","week","stats","exportimport"];
+    const { onTouchStart, onTouchEnd } = useSwipeNav(TAB_IDS, activeTab, setActiveTab);
+    const maps = ["all", ...Object.keys(MAP_COLORS)];
   const conditions = ["all", ...Object.keys(CONDITION_META)];
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -2782,7 +2820,7 @@ export default function App() {
           </svg>
           <div>
             <div className="flex items-baseline gap-2">
-              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v2.5</span></h1>
+              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v2.6</span></h1>
               
               </div>
               <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">{t.tagline}</p>
@@ -2860,7 +2898,7 @@ export default function App() {
         </div>
       </div>
 
-      <div className="max-w-3xl mx-auto px-4 py-6 flex flex-col gap-6">
+      <div className="max-w-3xl mx-auto px-4 py-6 flex flex-col gap-6" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
 
         {/* Main Tab content */}
         {/* 🔍 Suchleiste */}
@@ -2989,7 +3027,7 @@ export default function App() {
           {activeTab === "exportimport" && <ExportImportView favs={favs} onToast={addToast} />}
 
         {/* Footer */}
-        <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · ARC Twix v2.5 · {fetchStatus === "live" ? "Live-Daten" : "Fallback-Daten"}</p>
+        <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · ARC Twix v2.6 · {fetchStatus === "live" ? "Live-Daten" : "Fallback-Daten"}</p>
       </div>
     </LiveDataContext.Provider>
     </div>
