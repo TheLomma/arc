@@ -143,7 +143,7 @@ function ActiveCard({ item, favs = [], toggleFav = () => {}, onToast }) {
   );
 }
 
-function UpcomingRow({ item, index, favs = [], toggleFav = () => {}, onToast }) {
+function UpcomingRow({ item, favs = [], toggleFav = () => {}, onToast }) {
   const meta = getMeta(item.condition);
   const mapColor = MAP_COLORS[item.map] || "#6b7280";
   const initSecs = item.countdownH * 3600 + item.countdownM * 60 + 8;
@@ -235,6 +235,42 @@ function requestNotifPermission() {
   if ("Notification" in window && Notification.permission === "default") {
     Notification.requestPermission();
   }
+}
+
+// ── Sound System ───────────────────────────────────────────────────────────────
+function playAlarmSound(type = "alert") {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const sequences = {
+      alert: [ // 3 ascending beeps
+        { freq: 520, start: 0,    dur: 0.12 },
+        { freq: 660, start: 0.15, dur: 0.12 },
+        { freq: 880, start: 0.30, dur: 0.20 },
+      ],
+      live: [ // single deep pulse
+        { freq: 200, start: 0,    dur: 0.08 },
+        { freq: 440, start: 0.10, dur: 0.25 },
+      ],
+      fav: [ // soft chime
+        { freq: 880, start: 0,    dur: 0.15 },
+        { freq: 1100, start: 0.18, dur: 0.15 },
+      ],
+    };
+    const notes = sequences[type] || sequences.alert;
+    notes.forEach(({ freq, start, dur }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + start);
+      gain.gain.setValueAtTime(0.25, ctx.currentTime + start);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
+      osc.start(ctx.currentTime + start);
+      osc.stop(ctx.currentTime + start + dur + 0.05);
+    });
+    setTimeout(() => ctx.close(), 1500);
+  } catch (e) { /* AudioContext nicht verfügbar */ }
 }
 
 function sendNotification(title, body) {
@@ -636,7 +672,7 @@ const LOOT_GUIDE = {
   },
 };
 
-const RARITY_ORDER = ["Legendär", "Episch", "Selten", "Ungewöhnlich", "Gewöhnlich"];
+
 
 function LootGuideView() {
   const [selected, setSelected] = useState(null);
@@ -759,6 +795,8 @@ function LoadoutView() {
   const [selectedCond, setSelectedCond] = useState("");
   const [activeLoadout, setActiveLoadout] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [mapFilter, setMapFilter] = useState("all");
+  const [filter, setFilter] = useState("all");
 
   const applysuggestion = (cond) => {
     const s = LOADOUT_SUGGESTIONS[cond] || LOADOUT_SUGGESTIONS["default"];
@@ -788,20 +826,15 @@ function LoadoutView() {
       {/* Condition-Vorschlag */}
       <div>
         <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-2">⚡ Vorschlag für Condition</p>
-        <div className="flex flex-wrap gap-2">
-          {Object.keys(CONDITION_META).map(cond => {
-            const m = getMeta(cond);
-            const isActive = selectedCond === cond;
-            return (
-              <button key={cond} onClick={() => applysuggestion(cond)}
-                style={{ borderColor: isActive ? m.color : "transparent", color: isActive ? m.color : "" }}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border-2 text-xs font-semibold transition-all ${
-                  isActive ? "bg-gray-800" : "bg-gray-900 text-gray-500 hover:text-gray-300 hover:bg-gray-800"
-                }`}>
-                <span>{m.icon}</span>{cond}
-              </button>
-            );
-          })}
+        <div className="flex flex-col gap-2">
+            {/* Karten-Chips */}
+            <div className="flex gap-1.5 flex-wrap">
+              {["all",...Object.keys(MAP_COLORS)].map(m => { const col=MAP_COLORS[m]; const isAll=m==="all"; const active=mapFilter===m; return(<button key={m} onClick={()=>setMapFilter(m)} style={active&&!isAll?{borderColor:col,backgroundColor:col+"22",color:col}:{}} className={`px-2.5 py-1 rounded-full text-xs font-semibold border-2 transition-all whitespace-nowrap ${active?(isAll?"border-orange-500 bg-orange-500/15 text-orange-400":""):"border-gray-700 bg-gray-900 text-gray-500 hover:text-gray-300"}`}>{isAll?"🗺️ Alle Karten":m}</button>); })}
+            </div>
+            {/* Condition-Chips */}
+            <div className="flex gap-1.5 flex-wrap">
+              {["all",...Object.keys(CONDITION_META)].map(c => { const meta=getMeta(c); const isAll=c==="all"; const active=filter===c; return(<button key={c} onClick={()=>setFilter(c)} style={active&&!isAll?{borderColor:meta.color,backgroundColor:meta.color+"22",color:meta.color}:{}} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border-2 transition-all whitespace-nowrap ${active?(isAll?"border-orange-500 bg-orange-500/15 text-orange-400":""):"border-gray-700 bg-gray-900 text-gray-500 hover:text-gray-300"}`}>{!isAll&&<span>{meta.icon}</span>}{isAll?"⚡ Alle":c}</button>); })}
+            </div>
         </div>
       </div>
 
@@ -1231,7 +1264,7 @@ function DiscordView() {
           { name: "📍 Karte",   value: item?.map || "Spaceport",          inline: true },
           { name: "🕒 Uhrzeit", value: item?.timeRange || "11:00 – 12:00", inline: true },
         ],
-        footer: { text: "ARC Twix v1.6 · arcraiders.com" },
+        footer: { text: "ARC Twix v1.8 · arcraiders.com" },
         timestamp: new Date().toISOString(),
       }],
     };
@@ -1503,7 +1536,7 @@ function NotesView() {
 
       {/* Filter & Suche */}
       {notes.length > 0 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col gap-2">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Notizen durchsuchen…"
             className="flex-1 min-w-0 bg-gray-900 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 outline-none focus:border-orange-500 placeholder-gray-600" />
           <select value={filterTag} onChange={e => setFilterTag(e.target.value)}
@@ -1714,7 +1747,7 @@ function StatsView() {
 }
 
 // ── Condition-Verlauf ────────────────────────────────────────────────────────
-function HistoryView({ favs, toggleFav }) {
+function HistoryView({ favs, toggleFav, onToast }) {
   const [dayFilter, setDayFilter] = useState("all");
   const [condFilter, setCondFilter] = useState("all");
 
@@ -1737,7 +1770,7 @@ function HistoryView({ favs, toggleFav }) {
       <p className="text-gray-500 text-xs">Vergangene Map Conditions — heute & gestern. Zeigt was bereits gelaufen ist.</p>
 
       {/* Mini-Filter */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col gap-2">
         <select value={dayFilter} onChange={e => setDayFilter(e.target.value)}
           className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-orange-500">
           {days.map(d => <option key={d} value={d}>{d === "all" ? "📅 Alle Tage" : d}</option>)}
@@ -1792,7 +1825,7 @@ function HistoryView({ favs, toggleFav }) {
 }
 
 // ── Persönlicher Zeitplan ───────────────────────────────────────────────────
-function NextChanceView({ favs, toggleFav }) {
+function NextChanceView({ favs, toggleFav, onToast }) {
   // For each condition, find the next upcoming slot
   const allConditions = Object.keys(CONDITION_META);
 
@@ -1917,9 +1950,7 @@ const TRANSLATIONS = {
   },
 };
 
-const LangContext = typeof window !== "undefined"
-  ? require !== undefined ? null : null
-  : null;
+
 
 // Global lang state — readable anywhere
 let _globalT = TRANSLATIONS.de;
@@ -1964,6 +1995,15 @@ export default function App() {
   const [favs, toggleFav] = useFavorites();
   const notifiedRef = useRef(new Set());
   const [lastRefresh, setLastRefresh] = useState(new Date());
+    const [soundEnabled, setSoundEnabled] = useState(() => {
+      try { return localStorage.getItem("arc_sound") !== "off"; } catch { return true; }
+    });
+    const toggleSound = () => setSoundEnabled(s => {
+      const next = !s;
+      localStorage.setItem("arc_sound", next ? "on" : "off");
+      if (next) playAlarmSound("fav");
+      return next;
+    });
   const [activeTab, setActiveTab] = useState("main"); // "main" | "schedule"
   const [filter, setFilter] = useState("all");
   const [mapFilter, setMapFilter] = useState("all");
@@ -1991,6 +2031,7 @@ export default function App() {
           );
           const m = getMeta(item.condition);
             addToast(`${m.icon} ${item.condition} startet in <15 Min! 📍 ${item.map}`, "fav", 7000);
+            if (soundEnabled) playAlarmSound("alert");
             notifiedRef.current.add(key);
         }
       });
@@ -2040,10 +2081,10 @@ export default function App() {
           </svg>
           <div>
             <div className="flex items-baseline gap-2">
-              <h1 className="font-bold text-lg text-white leading-none">ARC Twix</h1>
-              <span className={`${subtext} text-xs font-mono`}>v1.6</span>
-            </div>
-            <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">{t.tagline}</p>
+              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v1.9</span></h1>
+              
+              </div>
+              <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">{t.tagline}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -2056,9 +2097,24 @@ export default function App() {
           <button
             onClick={refresh}
             className="bg-orange-500 hover:bg-orange-400 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
-          >
-            🔄 Refresh
-          </button>
+            >
+              🔄 Refresh
+            </button>
+            <button
+              onClick={toggleLang}
+                title="Sprache wechseln"
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg border-2 border-gray-700 bg-gray-900 text-gray-300 hover:text-white hover:border-gray-500 transition-all"
+              >{lang === "de" ? "🇩🇪 DE" : "🇬🇧 EN"}</button>
+              <button
+                onClick={toggleSound}
+              title={soundEnabled ? "Sound deaktivieren" : "Sound aktivieren"}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-lg border-2 transition-all ${
+                soundEnabled
+                  ? "border-orange-500 bg-orange-500/10 text-orange-400"
+                  : "border-gray-700 bg-gray-900 text-gray-500 hover:text-gray-300"
+              }`}
+            >{soundEnabled ? "🔔 Sound AN" : "🔇 Sound AUS"}</button>
+            
         </div>
       </div>
 
@@ -2097,8 +2153,8 @@ export default function App() {
       <div className="max-w-3xl mx-auto px-4 py-6 flex flex-col gap-6">
 
         {/* Main Tab content */}
-        {/* Filter Bar */}
-        <div className="flex flex-wrap gap-2">
+        {/* ⚡ Schnellfilter-Chips */}
+        <div className="flex flex-col gap-2">
           <select
             value={mapFilter}
             onChange={e => setMapFilter(e.target.value)}
@@ -2150,10 +2206,10 @@ export default function App() {
         }
         {/* Schedule Tab */}
         {activeTab === "schedule" && (
-          <NextChanceView favs={favs} toggleFav={toggleFav} />
-        )}
+            <NextChanceView favs={favs} toggleFav={toggleFav} onToast={addToast} />
+          )}
 
-        {activeTab === "history" && <HistoryView favs={favs} toggleFav={toggleFav} />}
+        {activeTab === "history" && <HistoryView favs={favs} toggleFav={toggleFav} onToast={addToast} />}
         {activeTab === "maps" && <MapsView favs={favs} toggleFav={toggleFav} onToast={addToast} />}
         {activeTab === "loot" && <LootGuideView />}
         {activeTab === "loadout" && <LoadoutView />}
