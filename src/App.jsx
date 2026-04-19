@@ -221,6 +221,482 @@ function StarButton({ condition, favs, toggle }) {
   );
 }
 
+// ── Karten-Übersicht ────────────────────────────────────────────────────────
+const MAP_INFO = {
+  "Dam Battlegrounds":  { icon: "🏞️", desc: "Industriegebiet mit Staudamm. Hohe Feindaktivität, gute Loot-Spots." },
+  "Spaceport":          { icon: "🚀", desc: "Verlassenes Raumfahrtzentrum. Viele vertikale Ebenen, Hidden Bunker möglich." },
+  "The Blue Gate":      { icon: "🔵", desc: "Mysteriöse Anlage. Electromagnetic Storms häufig. Riskant, aber lohnend." },
+  "Buried City":        { icon: "🏙️", desc: "Versunkene Stadt. Weitläufig, ideal für Bird City & Prospecting Probes." },
+  "Stella Montis":      { icon: "⛰️", desc: "Bergmassiv. Seltene Conditions, aber hochwertige Ressourcen." },
+};
+
+function MapCard({ mapName, favs, toggleFav }) {
+  const color = MAP_COLORS[mapName] || "#6b7280";
+  const info = MAP_INFO[mapName] || { icon: "🗺️", desc: "" };
+
+  const activeHere = SCRAPED_DATA.active.filter(a => a.map === mapName);
+  const upcomingHere = SCRAPED_DATA.upcoming.filter(u => u.map === mapName).slice(0, 3);
+  const historyHere = HISTORY_DATA.filter(h => h.map === mapName && h.date === "Heute").slice(0, 3);
+
+  return (
+    <div style={{ borderColor: color + "55" }} className="rounded-2xl border-2 bg-gray-900 overflow-hidden shadow-xl">
+      {/* Map Header */}
+      <div style={{ backgroundColor: color + "22" }} className="px-5 py-4 flex items-center gap-3 border-b border-gray-800">
+        <span className="text-3xl">{info.icon}</span>
+        <div className="flex-1">
+          <h3 style={{ color }} className="font-bold text-base leading-tight">{mapName}</h3>
+          <p className="text-gray-500 text-xs mt-0.5">{info.desc}</p>
+        </div>
+        {activeHere.length > 0 && (
+          <span className="flex items-center gap-1 text-green-400 text-xs font-semibold bg-green-400/10 px-2 py-1 rounded-full shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block"></span>
+            {activeHere.length} aktiv
+          </span>
+        )}
+      </div>
+
+      <div className="px-5 py-3 flex flex-col gap-3">
+        {/* Active */}
+        {activeHere.length > 0 && (
+          <div>
+            <p className="text-green-400 text-xs font-bold uppercase tracking-widest mb-1.5">Jetzt aktiv</p>
+            <div className="flex flex-col gap-1">
+              {activeHere.map((item, i) => {
+                const meta = getMeta(item.condition);
+                return (
+                  <div key={i} className="flex items-center gap-2">
+                    <StarButton condition={item.condition} favs={favs} toggle={toggleFav} />
+                    <span>{meta.icon}</span>
+                    <span style={{ color: meta.color }} className="text-sm font-semibold flex-1">{item.condition}</span>
+                    <span className="text-gray-500 text-xs font-mono">{item.timeRange}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Upcoming */}
+        {upcomingHere.length > 0 && (
+          <div>
+            <p className="text-orange-400 text-xs font-bold uppercase tracking-widest mb-1.5">Als nächstes</p>
+            <div className="flex flex-col gap-1">
+              {upcomingHere.map((item, i) => {
+                const meta = getMeta(item.condition);
+                return (
+                  <div key={i} className="flex items-center gap-2">
+                    <StarButton condition={item.condition} favs={favs} toggle={toggleFav} />
+                    <span className="opacity-70">{meta.icon}</span>
+                    <span style={{ color: meta.color }} className="text-sm flex-1 opacity-80">{item.condition}</span>
+                    <span className="text-gray-500 text-xs font-mono">{item.timeRange}</span>
+                    <span className="text-gray-600 text-xs">in {item.countdownH > 0 ? `${item.countdownH}h` : `${item.countdownM}m`}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* History */}
+        {historyHere.length > 0 && (
+          <div>
+            <p className="text-gray-600 text-xs font-bold uppercase tracking-widest mb-1.5">Heute gelaufen</p>
+            <div className="flex flex-col gap-1">
+              {historyHere.map((item, i) => {
+                const meta = getMeta(item.condition);
+                return (
+                  <div key={i} className="flex items-center gap-2 opacity-50">
+                    <span className="w-5"></span>
+                    <span>{meta.icon}</span>
+                    <span style={{ color: meta.color }} className="text-xs flex-1">{item.condition}</span>
+                    <span className="text-gray-600 text-xs font-mono">{item.timeRange}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {activeHere.length === 0 && upcomingHere.length === 0 && (
+          <p className="text-gray-600 text-xs">Keine Conditions geplant.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MapsView({ favs, toggleFav }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-gray-500 text-xs">Alle Karten auf einen Blick — aktive Conditions, nächste Events und heutiger Verlauf pro Map.</p>
+      {Object.keys(MAP_COLORS).map(mapName => (
+        <MapCard key={mapName} mapName={mapName} favs={favs} toggleFav={toggleFav} />
+      ))}
+    </div>
+  );
+}
+
+// ── Loot-Guide pro Condition ────────────────────────────────────────────────
+const LOOT_GUIDE = {
+  "Close Scrutiny": {
+    tip: "Feinde droppen häufiger Ausrüstung und Munition. Lohnt sich für Gear-Farming.",
+    loot: [
+      { item: "Militär-Munition", rarity: "Selten", color: "#3b82f6" },
+      { item: "Taktische Ausrüstung", rarity: "Ungewöhnlich", color: "#22c55e" },
+      { item: "Waffenmodifikationen", rarity: "Selten", color: "#3b82f6" },
+      { item: "Medikits (groß)", rarity: "Gewöhnlich", color: "#6b7280" },
+    ],
+    tip2: "💡 Fokus auf Feinde statt Kisten — Kills lohnen sich mehr.",
+  },
+  "Hidden Bunker": {
+    tip: "Exklusiver Bunker mit hochwertigem Loot. Teamarbeit empfohlen — viele Spieler kämpfen darum.",
+    loot: [
+      { item: "Seltene Waffen", rarity: "Episch", color: "#a855f7" },
+      { item: "Hochwertige Komponenten", rarity: "Selten", color: "#3b82f6" },
+      { item: "Spezial-Ausrüstung", rarity: "Episch", color: "#a855f7" },
+      { item: "Große Ressourcenpakete", rarity: "Selten", color: "#3b82f6" },
+    ],
+    tip2: "💡 40-Minuten-Timer — schnell rein, Bunker sichern, dann looten.",
+  },
+  "Lush Blooms": {
+    tip: "Pflanzenbasierte Ressourcen in großer Menge. Ideal für Crafting-Materialien.",
+    loot: [
+      { item: "Heilkräuter", rarity: "Gewöhnlich", color: "#6b7280" },
+      { item: "Seltene Pflanzenextrakte", rarity: "Selten", color: "#3b82f6" },
+      { item: "Crafting-Komponenten", rarity: "Ungewöhnlich", color: "#22c55e" },
+      { item: "Bio-Materialien", rarity: "Ungewöhnlich", color: "#22c55e" },
+    ],
+    tip2: "💡 Karten-Randbereiche absuchen — dort spawnen die meisten Blooms.",
+  },
+  "Electromagnetic Storm": {
+    tip: "Elektronik funktioniert eingeschränkt. Dafür spawnen seltene Tech-Komponenten.",
+    loot: [
+      { item: "Tech-Schrott (hochwertig)", rarity: "Selten", color: "#3b82f6" },
+      { item: "Elektronische Bauteile", rarity: "Selten", color: "#3b82f6" },
+      { item: "Energiezellen", rarity: "Ungewöhnlich", color: "#22c55e" },
+      { item: "Störsender-Komponenten", rarity: "Episch", color: "#a855f7" },
+    ],
+    tip2: "💡 Drohnen & Elektronik deaktiviert — auf Nahkampf setzen.",
+  },
+  "Harvester": {
+    tip: "Riesige ARC-Maschine patrouilliert die Map. Besiegen lohnt sich sehr!",
+    loot: [
+      { item: "Harvester-Kernteile", rarity: "Episch", color: "#a855f7" },
+      { item: "Schwere Metalle", rarity: "Selten", color: "#3b82f6" },
+      { item: "Maschinen-Schrottteile", rarity: "Ungewöhnlich", color: "#22c55e" },
+      { item: "Energie-Kristalle", rarity: "Episch", color: "#a855f7" },
+    ],
+    tip2: "💡 Schwachpunkte anvisieren — Harvester hat kritische Trefferzonen.",
+  },
+  "Bird City": {
+    tip: "Große Vogelschwärme mit wertvollen Federn und organischen Materialien.",
+    loot: [
+      { item: "Seltene Federn", rarity: "Selten", color: "#3b82f6" },
+      { item: "Organische Materialien", rarity: "Gewöhnlich", color: "#6b7280" },
+      { item: "Leichte Verbundwerkstoffe", rarity: "Ungewöhnlich", color: "#22c55e" },
+      { item: "Bionik-Komponenten", rarity: "Selten", color: "#3b82f6" },
+    ],
+    tip2: "💡 Schrotflinte oder Schnellfeuer für Vogel-Kills nutzen.",
+  },
+  "Matriarch": {
+    tip: "Mächtiger Boss-Spawn. Gefährlich, aber mit den besten Drops im Spiel.",
+    loot: [
+      { item: "Matriarch-Trophäe", rarity: "Legendär", color: "#f59e0b" },
+      { item: "Boss-Exklusiv-Items", rarity: "Episch", color: "#a855f7" },
+      { item: "Verstärkte Rüstungsteile", rarity: "Selten", color: "#3b82f6" },
+      { item: "Spezialwaffen-Teile", rarity: "Episch", color: "#a855f7" },
+    ],
+    tip2: "💡 Nur mit vollem Squad angehen — Solo ist extrem riskant.",
+  },
+  "Night Raid": {
+    tip: "Dunkelheit erschwert Sicht, aber schützt auch dich. Stealth-Taktiken bevorzugen.",
+    loot: [
+      { item: "Nachtsicht-Equipment", rarity: "Selten", color: "#3b82f6" },
+      { item: "Schalldämpfer", rarity: "Ungewöhnlich", color: "#22c55e" },
+      { item: "Taktische Granaten", rarity: "Gewöhnlich", color: "#6b7280" },
+      { item: "Stealth-Ausrüstung", rarity: "Selten", color: "#3b82f6" },
+    ],
+    tip2: "💡 Nachtsicht-Ausrüstung anlegen — gibt massiven Vorteil.",
+  },
+  "Hurricane": {
+    tip: "Sturm reduziert Sichtweite drastisch. Ressourcen-Spawns erhöht.",
+    loot: [
+      { item: "Wetter-Überlebenskit", rarity: "Ungewöhnlich", color: "#22c55e" },
+      { item: "Verstärktes Schutzmaterial", rarity: "Selten", color: "#3b82f6" },
+      { item: "Sturm-Ressourcen", rarity: "Gewöhnlich", color: "#6b7280" },
+      { item: "Seltene Mineralien", rarity: "Selten", color: "#3b82f6" },
+    ],
+    tip2: "💡 Gebäude als Schutz nutzen — im Freien ist man leichtes Ziel.",
+  },
+  "Launch Tower Loot": {
+    tip: "Raketenbasis mit exklusivem High-Tech-Loot. Nur im Spaceport verfügbar.",
+    loot: [
+      { item: "Raketenkomponenten", rarity: "Episch", color: "#a855f7" },
+      { item: "Avionik-Teile", rarity: "Selten", color: "#3b82f6" },
+      { item: "Treibstoffzellen", rarity: "Ungewöhnlich", color: "#22c55e" },
+      { item: "Satelliten-Hardware", rarity: "Episch", color: "#a855f7" },
+    ],
+    tip2: "💡 Turm von oben erkunden — bestes Loot in den oberen Ebenen.",
+  },
+  "Prospecting Probes": {
+    tip: "Sonden markieren Ressourcenvorkommen. Folge den Signalen für seltene Materialien.",
+    loot: [
+      { item: "Seltene Erze", rarity: "Selten", color: "#3b82f6" },
+      { item: "Rohdiamanten", rarity: "Episch", color: "#a855f7" },
+      { item: "Mineralproben", rarity: "Ungewöhnlich", color: "#22c55e" },
+      { item: "Geo-Scanner-Daten", rarity: "Selten", color: "#3b82f6" },
+    ],
+    tip2: "💡 Sonden-Signale auf der Minikarte verfolgen — führen zu Loot-Hotspots.",
+  },
+  "Locked Gate": {
+    tip: "Gesperrter Bereich mit exklusivem Loot dahinter. Schlüssel oder Sprengstoff nötig.",
+    loot: [
+      { item: "Gesperrter-Bereich-Loot", rarity: "Episch", color: "#a855f7" },
+      { item: "Spezial-Schlüsselkarten", rarity: "Selten", color: "#3b82f6" },
+      { item: "Hochsicherheits-Ausrüstung", rarity: "Episch", color: "#a855f7" },
+      { item: "Geheime Dokumente", rarity: "Selten", color: "#3b82f6" },
+    ],
+    tip2: "💡 Schlüssel vorher farmen oder Sprengstoff mitbringen.",
+  },
+};
+
+const RARITY_ORDER = ["Legendär", "Episch", "Selten", "Ungewöhnlich", "Gewöhnlich"];
+
+function LootGuideView() {
+  const [selected, setSelected] = useState(null);
+  const conditions = Object.keys(CONDITION_META);
+
+  const guide = selected ? LOOT_GUIDE[selected] : null;
+  const meta = selected ? getMeta(selected) : null;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-gray-500 text-xs">Wähle eine Condition um zu sehen, welche Items besonders häufig droppen und welche Strategie sich lohnt.</p>
+
+      {/* Condition Picker */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {conditions.map(cond => {
+          const m = getMeta(cond);
+          const isSelected = selected === cond;
+          return (
+            <button key={cond} onClick={() => setSelected(isSelected ? null : cond)}
+              style={{ borderColor: isSelected ? m.color : "transparent", backgroundColor: isSelected ? m.color + "18" : "" }}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl border-2 bg-gray-900 hover:bg-gray-800 transition-all text-left">
+              <span className="text-lg">{m.icon}</span>
+              <span style={{ color: m.color }} className="text-xs font-semibold leading-tight">{cond}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Loot Detail */}
+      {guide && meta && (
+        <div style={{ borderColor: meta.color + "55" }} className="rounded-2xl border-2 bg-gray-900 overflow-hidden">
+          <div style={{ backgroundColor: meta.color + "18" }} className="px-5 py-4 border-b border-gray-800">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">{meta.icon}</span>
+              <div>
+                <h3 style={{ color: meta.color }} className="font-bold text-base">{selected}</h3>
+                <p className="text-gray-400 text-xs mt-0.5">{guide.tip}</p>
+              </div>
+            </div>
+          </div>
+          <div className="px-5 py-4 flex flex-col gap-4">
+            {/* Loot List */}
+            <div>
+              <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-2">🎁 Drop-Tabelle</p>
+              <div className="flex flex-col gap-2">
+                {guide.loot.map((l, i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: l.color }}></span>
+                      <span className="text-white text-sm">{l.item}</span>
+                    </div>
+                    <span style={{ color: l.color, borderColor: l.color + "44", backgroundColor: l.color + "11" }}
+                      className="text-xs font-semibold px-2 py-0.5 rounded-full border">{l.rarity}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Strategie-Tipp */}
+            <div className="bg-gray-800 rounded-xl px-4 py-3">
+              <p className="text-white text-sm">{guide.tip2}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!selected && (
+        <div className="text-center py-8 text-gray-600">
+          <p className="text-3xl mb-2">🎁</p>
+          <p className="text-sm">Condition auswählen für Loot-Details</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Loadout-Planer ──────────────────────────────────────────────────────────
+const LOADOUT_SLOTS = [
+  { id: "primary",   label: "Primärwaffe",     icon: "🔫" },
+  { id: "secondary", label: "Sekundärwaffe",   icon: "🔫" },
+  { id: "melee",     label: "Nahkampf",        icon: "🗡️" },
+  { id: "helmet",   label: "Helm",            icon: "⛑️" },
+  { id: "vest",     label: "Weste",           icon: "🧯" },
+  { id: "backpack", label: "Rucksack",        icon: "🎒" },
+  { id: "med",      label: "Medizin",         icon: "💉" },
+  { id: "gadget",   label: "Gadget",          icon: "🔧" },
+];
+
+const LOADOUT_SUGGESTIONS = {
+  "Night Raid":           { primary: "Schalldämpfer-Gewehr", secondary: "Pistole", melee: "Messer", helmet: "Nachtsicht-Helm", vest: "Leichte Weste", backpack: "Stealth-Pack", med: "Kleines Medikit", gadget: "Rauchgranate" },
+  "Harvester":            { primary: "Schweres MG", secondary: "Shotgun", melee: "Beil", helmet: "Stahlhelm", vest: "Schwere Weste", backpack: "Großer Rucksack", med: "Großes Medikit", gadget: "EMP-Granate" },
+  "Matriarch":            { primary: "Scharfschützengewehr", secondary: "SMG", melee: "Machete", helmet: "Verbundhelm", vest: "Taktische Weste", backpack: "Combat-Pack", med: "Erste-Hilfe-Set", gadget: "Claymore" },
+  "Electromagnetic Storm":{ primary: "Mechanisches Gewehr", secondary: "Revolver", melee: "Hammer", helmet: "Isolierhelm", vest: "Isolierende Weste", backpack: "Standard-Pack", med: "Mittelgroßes Medikit", gadget: "Blendgranate" },
+  "Hidden Bunker":        { primary: "Sturmgewehr", secondary: "Shotgun", melee: "Messer", helmet: "Taktikhelm", vest: "Schwere Weste", backpack: "Großer Rucksack", med: "Großes Medikit", gadget: "Sprengladung" },
+  "default":              { primary: "Sturmgewehr", secondary: "Pistole", melee: "Messer", helmet: "Standardhelm", vest: "Mittlere Weste", backpack: "Standard-Pack", med: "Mittelgroßes Medikit", gadget: "Granate" },
+};
+
+function useLoadouts() {
+  const [loadouts, setLoadouts] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("arc_loadouts") || "{}"); }
+    catch { return {}; }
+  });
+  const save = (name, data) => {
+    const next = { ...loadouts, [name]: data };
+    setLoadouts(next);
+    localStorage.setItem("arc_loadouts", JSON.stringify(next));
+  };
+  const remove = (name) => {
+    const next = { ...loadouts };
+    delete next[name];
+    setLoadouts(next);
+    localStorage.setItem("arc_loadouts", JSON.stringify(next));
+  };
+  return [loadouts, save, remove];
+}
+
+function LoadoutView() {
+  const [loadouts, saveLoadout, removeLoadout] = useLoadouts();
+  const [slots, setSlots] = useState({ primary: "", secondary: "", melee: "", helmet: "", vest: "", backpack: "", med: "", gadget: "" });
+  const [loadoutName, setLoadoutName] = useState("");
+  const [selectedCond, setSelectedCond] = useState("");
+  const [activeLoadout, setActiveLoadout] = useState(null);
+  const [saved, setSaved] = useState(false);
+
+  const applysuggestion = (cond) => {
+    const s = LOADOUT_SUGGESTIONS[cond] || LOADOUT_SUGGESTIONS["default"];
+    setSlots(s);
+    setSelectedCond(cond);
+  };
+
+  const handleSave = () => {
+    if (!loadoutName.trim()) return;
+    saveLoadout(loadoutName.trim(), { slots, condition: selectedCond });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleLoad = (name) => {
+    const l = loadouts[name];
+    setSlots(l.slots);
+    setSelectedCond(l.condition || "");
+    setLoadoutName(name);
+    setActiveLoadout(name);
+  };
+
+  return (
+    <div className="flex flex-col gap-5">
+      <p className="text-gray-500 text-xs">Plane deine Ausrüstung für die nächste Session. Wähle eine Condition für einen Vorschlag oder füll alles manuell aus. Loadouts werden lokal gespeichert.</p>
+
+      {/* Condition-Vorschlag */}
+      <div>
+        <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-2">⚡ Vorschlag für Condition</p>
+        <div className="flex flex-wrap gap-2">
+          {Object.keys(CONDITION_META).map(cond => {
+            const m = getMeta(cond);
+            const isActive = selectedCond === cond;
+            return (
+              <button key={cond} onClick={() => applysuggestion(cond)}
+                style={{ borderColor: isActive ? m.color : "transparent", color: isActive ? m.color : "" }}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border-2 text-xs font-semibold transition-all ${
+                  isActive ? "bg-gray-800" : "bg-gray-900 text-gray-500 hover:text-gray-300 hover:bg-gray-800"
+                }`}>
+                <span>{m.icon}</span>{cond}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Slots */}
+      <div className="grid grid-cols-2 gap-2">
+        {LOADOUT_SLOTS.map(slot => (
+          <div key={slot.id} className="bg-gray-900 rounded-xl px-3 py-2.5 border border-gray-800">
+            <label className="text-gray-500 text-xs flex items-center gap-1 mb-1">
+              <span>{slot.icon}</span>{slot.label}
+            </label>
+            <input
+              value={slots[slot.id] || ""}
+              onChange={e => setSlots(s => ({ ...s, [slot.id]: e.target.value }))}
+              placeholder={`${slot.label} eintragen…`}
+              className="w-full bg-transparent text-white text-sm outline-none placeholder-gray-700 border-b border-gray-700 focus:border-orange-500 pb-0.5 transition-colors"
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Speichern */}
+      <div className="flex gap-2 items-center">
+        <input
+          value={loadoutName}
+          onChange={e => setLoadoutName(e.target.value)}
+          placeholder="Loadout-Name…"
+          className="flex-1 bg-gray-900 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 outline-none focus:border-orange-500 placeholder-gray-600"
+        />
+        <button onClick={handleSave}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            saved ? "bg-green-600 text-white" : "bg-orange-500 hover:bg-orange-400 text-white"
+          }`}>
+          {saved ? "✅ Gespeichert" : "💾 Speichern"}
+        </button>
+      </div>
+
+      {/* Gespeicherte Loadouts */}
+      {Object.keys(loadouts).length > 0 && (
+        <div>
+          <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-2">📂 Gespeicherte Loadouts</p>
+          <div className="flex flex-col gap-2">
+            {Object.entries(loadouts).map(([name, data]) => {
+              const isActive = activeLoadout === name;
+              const condMeta = data.condition ? getMeta(data.condition) : null;
+              return (
+                <div key={name} style={{ borderColor: isActive ? "#f97316" : "transparent" }}
+                  className="flex items-center gap-3 bg-gray-900 rounded-xl px-4 py-3 border-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-semibold">{name}</p>
+                    {condMeta && (
+                      <span style={{ color: condMeta.color }} className="text-xs">{condMeta.icon} {data.condition}</span>
+                    )}
+                  </div>
+                  <button onClick={() => handleLoad(name)}
+                    className="text-xs text-orange-400 hover:text-orange-300 font-semibold px-2 py-1 rounded-lg hover:bg-orange-400/10 transition-colors">
+                    Laden
+                  </button>
+                  <button onClick={() => { removeLoadout(name); if (activeLoadout === name) setActiveLoadout(null); }}
+                    className="text-xs text-gray-600 hover:text-red-400 font-semibold px-2 py-1 rounded-lg hover:bg-red-400/10 transition-colors">
+                    🗑️
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Condition-Verlauf ────────────────────────────────────────────────────────
 function HistoryView({ favs, toggleFav }) {
   const [dayFilter, setDayFilter] = useState("all");
@@ -433,7 +909,7 @@ export default function App() {
           <div>
             <div className="flex items-baseline gap-2">
               <h1 className="font-bold text-lg text-white leading-none">ARC Twix</h1>
-              <span className="text-gray-600 text-xs font-mono">v1.1</span>
+              <span className="text-gray-600 text-xs font-mono">v1.2</span>
             </div>
             <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">Map Conditions</p>
           </div>
@@ -461,6 +937,9 @@ export default function App() {
             { id: "main",     label: "📋 Übersicht" },
             { id: "schedule", label: "🗓️ Mein Zeitplan" },
             { id: "history",  label: "📜 Verlauf" },
+            { id: "maps",     label: "🗺️ Karten" },
+            { id: "loot",     label: "🎁 Loot-Guide" },
+            { id: "loadout",  label: "🎒 Loadout" },
           ].map(tab => (
             <button
               key={tab.id}
@@ -537,6 +1016,9 @@ export default function App() {
         )}
 
         {activeTab === "history" && <HistoryView favs={favs} toggleFav={toggleFav} />}
+        {activeTab === "maps" && <MapsView favs={favs} toggleFav={toggleFav} />}
+        {activeTab === "loot" && <LootGuideView />}
+        {activeTab === "loadout" && <LoadoutView />}
 
         {/* Footer */}
         <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · Rheinische Post Mediengruppe Tracker</p>
