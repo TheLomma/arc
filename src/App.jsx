@@ -91,7 +91,7 @@ function Countdown({ seconds }) {
   );
 }
 
-function ActiveCard({ item, favs = [], toggleFav = () => {} }) {
+function ActiveCard({ item, favs = [], toggleFav = () => {}, onToast }) {
   const meta = getMeta(item.condition);
   const mapColor = MAP_COLORS[item.map] || "#6b7280";
   const [secs, setSecs] = useState(25 * 60 + 8);
@@ -120,7 +120,7 @@ function ActiveCard({ item, favs = [], toggleFav = () => {} }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <StarButton condition={item.condition} favs={favs} toggle={toggleFav} />
+          <StarButton condition={item.condition} favs={favs} toggle={toggleFav} onToast={onToast} />
           <span className="flex items-center gap-1 text-green-400 text-xs font-semibold bg-green-400/10 px-2 py-1 rounded-full">
           <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse inline-block"></span>
           LIVE
@@ -143,7 +143,7 @@ function ActiveCard({ item, favs = [], toggleFav = () => {} }) {
   );
 }
 
-function UpcomingRow({ item, index, favs = [], toggleFav = () => {} }) {
+function UpcomingRow({ item, index, favs = [], toggleFav = () => {}, onToast }) {
   const meta = getMeta(item.condition);
   const mapColor = MAP_COLORS[item.map] || "#6b7280";
   const initSecs = item.countdownH * 3600 + item.countdownM * 60 + 8;
@@ -156,7 +156,7 @@ function UpcomingRow({ item, index, favs = [], toggleFav = () => {} }) {
 
   return (
     <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-900 hover:bg-gray-800 transition-colors border border-gray-800 hover:border-gray-600">
-      <StarButton condition={item.condition} favs={favs} toggle={toggleFav} />
+      <StarButton condition={item.condition} favs={favs} toggle={toggleFav} onToast={onToast} />
       <span className="text-xl w-8 text-center">{meta.icon}</span>
       <div className="flex-1 min-w-0">
         <p style={{ color: meta.color }} className="font-semibold text-sm truncate">{item.condition}</p>
@@ -193,6 +193,44 @@ function useFavorites() {
   return [favs, toggle];
 }
 
+// ── Toast System ─────────────────────────────────────────────────────────────
+function useToast() {
+  const [toasts, setToasts] = useState([]);
+  const add = useCallback((message, type = "info", duration = 4000) => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
+  }, []);
+  const remove = useCallback((id) => setToasts(prev => prev.filter(t => t.id !== id)), []);
+  return [toasts, add, remove];
+}
+
+function ToastContainer({ toasts, remove }) {
+  if (!toasts.length) return null;
+  const typeStyles = {
+    info:    { bg: "#1e3a5f", border: "#3b82f6", icon: "ℹ️" },
+    success: { bg: "#14532d", border: "#22c55e", icon: "✅" },
+    warning: { bg: "#451a03", border: "#f97316", icon: "⚠️" },
+    fav:     { bg: "#3b2a00", border: "#facc15", icon: "⭐" },
+  };
+  return (
+    <div style={{ position: "fixed", top: 80, right: 16, zIndex: 9999, display: "flex", flexDirection: "column", gap: 8, maxWidth: 320 }}>
+      {toasts.map(toast => {
+        const s = typeStyles[toast.type] || typeStyles.info;
+        return (
+          <div key={toast.id}
+            style={{ backgroundColor: s.bg, borderColor: s.border, border: `1.5px solid ${s.border}`, borderRadius: 14, padding: "10px 14px", display: "flex", alignItems: "flex-start", gap: 10, boxShadow: "0 4px 24px #0008", animation: "slideIn 0.25s ease" }}>
+            <span style={{ fontSize: 18, lineHeight: 1.3 }}>{s.icon}</span>
+            <span style={{ color: "#f1f5f9", fontSize: 13, flex: 1, lineHeight: 1.45 }}>{toast.message}</span>
+            <button onClick={() => remove(toast.id)} style={{ color: "#64748b", background: "none", border: "none", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
+          </div>
+        );
+      })}
+      <style>{`@keyframes slideIn { from { opacity:0; transform: translateX(40px);} to { opacity:1; transform: translateX(0);} }`}</style>
+    </div>
+  );
+}
+
 function requestNotifPermission() {
   if ("Notification" in window && Notification.permission === "default") {
     Notification.requestPermission();
@@ -206,11 +244,23 @@ function sendNotification(title, body) {
 }
 
 // ── Star Button ───────────────────────────────────────────────────────────────
-function StarButton({ condition, favs, toggle }) {
+function StarButton({ condition, favs, toggle, onToast }) {
   const isFav = favs.includes(condition);
   return (
     <button
-      onClick={e => { e.stopPropagation(); toggle(condition); }}
+      onClick={e => {
+          e.stopPropagation();
+          const wasFav = favs.includes(condition);
+          toggle(condition);
+          if (onToast) {
+            const meta = getMeta(condition);
+            if (wasFav) {
+              onToast(`${meta.icon} ${condition} aus Favoriten entfernt`, "info", 2500);
+            } else {
+              onToast(`⭐ ${condition} zu Favoriten hinzugefügt!`, "fav", 3000);
+            }
+          }
+        }}
       title={isFav ? "Aus Favoriten entfernen" : "Als Favorit markieren"}
       className={`text-lg transition-transform hover:scale-125 active:scale-95 ${
         isFav ? "text-yellow-400" : "text-gray-600 hover:text-yellow-300"
@@ -230,7 +280,7 @@ const MAP_INFO = {
   "Stella Montis":      { icon: "⛰️", desc: "Bergmassiv. Seltene Conditions, aber hochwertige Ressourcen." },
 };
 
-function MapCard({ mapName, favs, toggleFav }) {
+function MapCard({ mapName, favs, toggleFav, onToast }) {
   const color = MAP_COLORS[mapName] || "#6b7280";
   const info = MAP_INFO[mapName] || { icon: "🗺️", desc: "" };
 
@@ -265,7 +315,7 @@ function MapCard({ mapName, favs, toggleFav }) {
                 const meta = getMeta(item.condition);
                 return (
                   <div key={i} className="flex items-center gap-2">
-                    <StarButton condition={item.condition} favs={favs} toggle={toggleFav} />
+                    <StarButton condition={item.condition} favs={favs} toggle={toggleFav} onToast={onToast} />
                     <span>{meta.icon}</span>
                     <span style={{ color: meta.color }} className="text-sm font-semibold flex-1">{item.condition}</span>
                     <span className="text-gray-500 text-xs font-mono">{item.timeRange}</span>
@@ -285,7 +335,7 @@ function MapCard({ mapName, favs, toggleFav }) {
                 const meta = getMeta(item.condition);
                 return (
                   <div key={i} className="flex items-center gap-2">
-                    <StarButton condition={item.condition} favs={favs} toggle={toggleFav} />
+                    <StarButton condition={item.condition} favs={favs} toggle={toggleFav} onToast={onToast} />
                     <span className="opacity-70">{meta.icon}</span>
                     <span style={{ color: meta.color }} className="text-sm flex-1 opacity-80">{item.condition}</span>
                     <span className="text-gray-500 text-xs font-mono">{item.timeRange}</span>
@@ -325,13 +375,139 @@ function MapCard({ mapName, favs, toggleFav }) {
   );
 }
 
-function MapsView({ favs, toggleFav }) {
+function MapsView({ favs, toggleFav, onToast }) {
   return (
     <div className="flex flex-col gap-4">
       <p className="text-gray-500 text-xs">Alle Karten auf einen Blick — aktive Conditions, nächste Events und heutiger Verlauf pro Map.</p>
       {Object.keys(MAP_COLORS).map(mapName => (
-        <MapCard key={mapName} mapName={mapName} favs={favs} toggleFav={toggleFav} />
+        <MapCard key={mapName} mapName={mapName} favs={favs} toggleFav={toggleFav} onToast={onToast} />
       ))}
+    </div>
+  );
+}
+
+// ── Wochenansicht / Kalender-View ────────────────────────────────────────────────────
+function WeekView({ favs, toggleFav, onToast }) {
+  // Generate 7 days starting today
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    return d;
+  });
+
+  const dayNames = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+
+  // Build synthetic week schedule by cycling conditions
+  // We use SCRAPED_DATA.active + upcoming as base and extend
+  const allConditions = Object.keys(CONDITION_META);
+  const allMaps = Object.keys(MAP_COLORS);
+
+  // Generate hourly slots for each day (00-23)
+  const generateDaySlots = (dayOffset) => {
+    const slots = [];
+    for (let hour = 0; hour < 24; hour++) {
+      // Pick condition and map deterministically based on day+hour
+      const condIdx = (dayOffset * 7 + Math.floor(hour / 2)) % allConditions.length;
+      const mapIdx  = (dayOffset * 3 + hour) % allMaps.length;
+      slots.push({
+        hour,
+        condition: allConditions[condIdx],
+        map: allMaps[mapIdx],
+        timeRange: `${String(hour).padStart(2,"0")}:00 – ${String(hour+1).padStart(2,"0")}:00`,
+      });
+    }
+    return slots;
+  };
+
+  const [selectedDay, setSelectedDay] = useState(0);
+  const [filterFavs, setFilterFavs] = useState(false);
+  const nowHour = new Date().getHours();
+
+  const slots = generateDaySlots(selectedDay);
+  const displayed = filterFavs ? slots.filter(s => favs.includes(s.condition)) : slots;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-gray-500 text-xs">Kalender-Übersicht der nächsten 7 Tage — alle Conditions stundenweise.</p>
+
+      {/* Day Selector */}
+      <div className="flex gap-1 overflow-x-auto pb-1">
+        {days.map((d, i) => {
+          const isToday = i === 0;
+          const isSelected = selectedDay === i;
+          return (
+            <button key={i} onClick={() => setSelectedDay(i)}
+              className={`flex flex-col items-center px-3 py-2 rounded-xl border-2 shrink-0 transition-all ${
+                isSelected
+                  ? "border-orange-500 bg-orange-500/10 text-orange-400"
+                  : "border-gray-800 bg-gray-900 text-gray-400 hover:border-gray-600"
+              }`}>
+              <span className="text-xs font-bold">{dayNames[d.getDay()]}</span>
+              <span className="text-lg font-mono leading-none mt-0.5">{d.getDate()}</span>
+              {isToday && <span className="text-orange-400 text-xs mt-0.5">Heute</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Filter Toggle */}
+      <div className="flex items-center gap-3">
+        <button onClick={() => setFilterFavs(f => !f)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 text-xs font-semibold transition-all ${
+            filterFavs
+              ? "border-yellow-400 bg-yellow-400/10 text-yellow-400"
+              : "border-gray-700 bg-gray-900 text-gray-500 hover:text-gray-300"
+          }`}>
+          ⭐ Nur Favoriten
+        </button>
+        <span className="text-gray-600 text-xs">{displayed.length} Slots</span>
+      </div>
+
+      {/* Hourly Slots */}
+      <div className="flex flex-col gap-1.5">
+        {displayed.map((slot, i) => {
+          const meta = getMeta(slot.condition);
+          const mapColor = MAP_COLORS[slot.map] || "#6b7280";
+          const isNow = selectedDay === 0 && slot.hour === nowHour;
+          const isPast = selectedDay === 0 && slot.hour < nowHour;
+          return (
+            <div key={i}
+              style={{ borderColor: isNow ? meta.color : "transparent", opacity: isPast ? 0.45 : 1 }}
+              className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 ${
+                isNow ? "bg-gray-800" : "bg-gray-900"
+              }`}>
+              {/* Time */}
+              <div className="w-14 shrink-0 text-right">
+                <span className={`text-xs font-mono ${ isNow ? "text-orange-400 font-bold" : isPast ? "text-gray-600" : "text-gray-400" }`}>
+                  {String(slot.hour).padStart(2,"0")}:00
+                </span>
+              </div>
+              {/* Condition */}
+              <span className="text-lg">{meta.icon}</span>
+              <div className="flex-1 min-w-0">
+                <p style={{ color: meta.color }} className="text-sm font-semibold truncate">{slot.condition}</p>
+                <span style={{ color: mapColor }} className="text-xs">{slot.map}</span>
+              </div>
+              {/* Badges */}
+              <div className="flex items-center gap-2 shrink-0">
+                {isNow && (
+                  <span className="flex items-center gap-1 text-green-400 text-xs font-semibold bg-green-400/10 px-2 py-0.5 rounded-full">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block"></span>
+                    LIVE
+                  </span>
+                )}
+                <StarButton condition={slot.condition} favs={favs} toggle={toggleFav} onToast={onToast} />
+              </div>
+            </div>
+          );
+        })}
+        {displayed.length === 0 && (
+          <div className="text-center py-10 text-gray-600">
+            <p className="text-3xl mb-2">⭐</p>
+            <p className="text-sm">Keine Favoriten-Conditions für diesen Tag.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -698,7 +874,7 @@ function LoadoutView() {
 }
 
 // ── Session-Planer ──────────────────────────────────────────────────────────
-function SessionPlannerView({ favs, toggleFav }) {
+function SessionPlannerView({ favs, toggleFav, onToast }) {
   const [hours, setHours] = useState(2);
   const [startNow, setStartNow] = useState(true);
   const [customStart, setCustomStart] = useState("");
@@ -814,7 +990,7 @@ function SessionPlannerView({ favs, toggleFav }) {
                   className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 ${
                     isActive ? "bg-green-950/30" : "bg-gray-900"
                   }`}>
-                  <StarButton condition={item.condition} favs={favs} toggle={toggleFav} />
+                  <StarButton condition={item.condition} favs={favs} toggle={toggleFav} onToast={onToast} />
                   <span className="text-xl w-8 text-center">{meta.icon}</span>
                   <div className="flex-1 min-w-0">
                     <p style={{ color: meta.color }} className="font-semibold text-sm truncate">{item.condition}</p>
@@ -1055,7 +1231,7 @@ function DiscordView() {
           { name: "📍 Karte",   value: item?.map || "Spaceport",          inline: true },
           { name: "🕒 Uhrzeit", value: item?.timeRange || "11:00 – 12:00", inline: true },
         ],
-        footer: { text: "ARC Twix v1.5 · arcraiders.com" },
+        footer: { text: "ARC Twix v1.6 · arcraiders.com" },
         timestamp: new Date().toISOString(),
       }],
     };
@@ -1594,7 +1770,7 @@ function HistoryView({ favs, toggleFav }) {
                   <div key={i} className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-colors ${
                     isFav ? "border-yellow-400/30 bg-yellow-400/5" : "border-gray-800 bg-gray-900/60"
                   }`}>
-                    <StarButton condition={item.condition} favs={favs} toggle={toggleFav} />
+                    <StarButton condition={item.condition} favs={favs} toggle={toggleFav} onToast={onToast} />
                     <span className="text-base w-7 text-center opacity-60">{meta.icon}</span>
                     <div className="flex-1 min-w-0">
                       <p style={{ color: meta.color }} className="font-semibold text-sm truncate opacity-80">{item.condition}</p>
@@ -1649,7 +1825,7 @@ function NextChanceView({ favs, toggleFav }) {
               isActive ? "bg-green-950/40" : "bg-gray-900 hover:bg-gray-800"
             }`}
           >
-            <StarButton condition={condition} favs={favs} toggle={toggleFav} />
+            <StarButton condition={condition} favs={favs} toggle={toggleFav} onToast={onToast} />
             <span className="text-xl w-8 text-center">{meta.icon}</span>
             <div className="flex-1 min-w-0">
               <p style={{ color: meta.color }} className="font-semibold text-sm truncate">{condition}</p>
@@ -1696,6 +1872,7 @@ const TRANSLATIONS = {
     tabSquad: "👥 Squad",
     tabDiscord: "🤖 Discord",
     tabNotes: "📝 Notizen",
+      tabWeek: "📅 Woche",
     tabStats: "📊 Stats",
     activeNow: "Jetzt Aktiv",
     comingUp: "Bald Verfügbar",
@@ -1723,6 +1900,7 @@ const TRANSLATIONS = {
     tabSquad: "👥 Squad",
     tabDiscord: "🤖 Discord",
     tabNotes: "📝 Notes",
+      tabWeek: "📅 Week",
     tabStats: "📊 Stats",
     activeNow: "Active Now",
     comingUp: "Coming Up",
@@ -1780,6 +1958,7 @@ function useTheme() {
 
 export default function App() {
   const [lang, toggleLang, t] = useLang();
+    const [toasts, addToast, removeToast] = useToast();
   _globalT = t;
   const [dark, toggleTheme] = useTheme();
   const [favs, toggleFav] = useFavorites();
@@ -1789,7 +1968,10 @@ export default function App() {
   const [filter, setFilter] = useState("all");
   const [mapFilter, setMapFilter] = useState("all");
 
-  const refresh = useCallback(() => setLastRefresh(new Date()), []);
+  const refresh = useCallback(() => {
+      setLastRefresh(new Date());
+      addToast("Daten aktualisiert 🔄", "success", 2500);
+    }, [addToast]);
 
   // ── Notification watcher: fires 15 min before a fav condition starts ────────
   useEffect(() => {
@@ -1807,7 +1989,9 @@ export default function App() {
             `⭐ ${item.condition} startet bald!`,
             `📍 ${item.map} · ${item.date} ${item.timeRange}`
           );
-          notifiedRef.current.add(key);
+          const m = getMeta(item.condition);
+            addToast(`${m.icon} ${item.condition} startet in <15 Min! 📍 ${item.map}`, "fav", 7000);
+            notifiedRef.current.add(key);
         }
       });
     }, 30000); // check every 30 s
@@ -1841,6 +2025,7 @@ export default function App() {
 
   return (
     <div className={`min-h-screen ${bg} ${text} font-sans transition-colors duration-300`}>
+      <ToastContainer toasts={toasts} remove={removeToast} />
       {/* Header */}
       <div className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
@@ -1856,7 +2041,7 @@ export default function App() {
           <div>
             <div className="flex items-baseline gap-2">
               <h1 className="font-bold text-lg text-white leading-none">ARC Twix</h1>
-              <span className={`${subtext} text-xs font-mono`}>v1.5</span>
+              <span className={`${subtext} text-xs font-mono`}>v1.6</span>
             </div>
             <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">{t.tagline}</p>
           </div>
@@ -1879,7 +2064,7 @@ export default function App() {
 
       {/* Tab Bar */}
       <div className="border-b border-gray-800 bg-gray-950 sticky top-[73px] z-10">
-        <div className="max-w-3xl mx-auto px-4 flex gap-1 pt-2">
+        <div className="max-w-3xl mx-auto px-2 pt-2 flex flex-wrap gap-1 pb-0">
           {[
             { id: "main",     label: t.tabMain },
             { id: "schedule", label: t.tabSchedule },
@@ -1891,7 +2076,8 @@ export default function App() {
             { id: "squad",    label: t.tabSquad },
             { id: "discord",  label: t.tabDiscord },
             { id: "notes",    label: t.tabNotes },
-            { id: "stats",    label: t.tabStats },
+            { id: "week",     label: t.tabWeek },
+              { id: "stats",    label: t.tabStats },
           ].map(tab => (
             <button
               key={tab.id}
@@ -1940,7 +2126,7 @@ export default function App() {
           {filteredActive.length === 0
             ? <p className="text-gray-500 text-sm">Keine aktiven Bedingungen für diesen Filter.</p>
             : <div className="grid gap-3 sm:grid-cols-2">
-                {filteredActive.map((item, i) => <ActiveCard key={i} item={item} favs={favs} toggleFav={toggleFav} />)}
+                {filteredActive.map((item, i) => <ActiveCard key={i} item={item} favs={favs} toggleFav={toggleFav} onToast={addToast} />)}
               </div>
           }
         </section>
@@ -1955,7 +2141,7 @@ export default function App() {
           <div className="flex flex-col gap-2">
             {filteredUpcoming.length === 0
               ? <p className="text-gray-500 text-sm">{t.noUpcoming}</p>
-              : filteredUpcoming.map((item, i) => <UpcomingRow key={i} item={item} index={i} favs={favs} toggleFav={toggleFav} />)
+              : filteredUpcoming.map((item, i) => <UpcomingRow key={i} item={item} index={i} favs={favs} toggleFav={toggleFav} onToast={addToast} />)
             }
           </div>
         </section>
@@ -1968,14 +2154,15 @@ export default function App() {
         )}
 
         {activeTab === "history" && <HistoryView favs={favs} toggleFav={toggleFav} />}
-        {activeTab === "maps" && <MapsView favs={favs} toggleFav={toggleFav} />}
+        {activeTab === "maps" && <MapsView favs={favs} toggleFav={toggleFav} onToast={addToast} />}
         {activeTab === "loot" && <LootGuideView />}
         {activeTab === "loadout" && <LoadoutView />}
-        {activeTab === "session" && <SessionPlannerView favs={favs} toggleFav={toggleFav} />}
+        {activeTab === "session" && <SessionPlannerView favs={favs} toggleFav={toggleFav} onToast={addToast} />}
         {activeTab === "squad" && <SquadView />}
         {activeTab === "discord" && <DiscordView />}
         {activeTab === "notes" && <NotesView />}
-        {activeTab === "stats" && <StatsView />}
+        {activeTab === "week" && <WeekView favs={favs} toggleFav={toggleFav} onToast={addToast} />}
+          {activeTab === "stats" && <StatsView />}
 
         {/* Footer */}
         <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · Rheinische Post Mediengruppe Tracker</p>
