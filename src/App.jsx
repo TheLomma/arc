@@ -600,34 +600,61 @@ function WeekView({ favs, toggleFav, onToast }) {
 
   const dayNames = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
-  // Build synthetic week schedule by cycling conditions
-  // We use SCRAPED_DATA.active + upcoming as base and extend
   const allConditions = Object.keys(CONDITION_META);
   const allMaps = Object.keys(MAP_COLORS);
-
-  // Generate hourly slots for each day (00-23)
-  const generateDaySlots = (dayOffset) => {
-    const slots = [];
-    for (let hour = 0; hour < 24; hour++) {
-      // Pick condition and map deterministically based on day+hour
-      const condIdx = (dayOffset * 7 + Math.floor(hour / 2)) % allConditions.length;
-      const mapIdx  = (dayOffset * 3 + hour) % allMaps.length;
-      slots.push({
-        hour,
-        condition: allConditions[condIdx],
-        map: allMaps[mapIdx],
-        timeRange: `${String(hour).padStart(2,"0")}:00 – ${String(hour+1).padStart(2,"0")}:00`,
-      });
-    }
-    return slots;
-  };
-
   const [selectedDay, setSelectedDay] = useState(0);
   const [filterFavs, setFilterFavs] = useState(false);
   const nowHour = new Date().getHours();
 
-  const slots = generateDaySlots(selectedDay);
-  const displayed = filterFavs ? slots.filter(s => favs.includes(s.condition)) : slots;
+  // TODAY: real data from HISTORY + SCRAPED
+  const buildTodaySlots = () => {
+    const slotMap = {};
+    HISTORY_DATA.filter(h => h.date === "Heute").forEach(h => {
+      const hour = parseInt(h.timeRange.split(":")[0], 10);
+      if (!slotMap[hour]) slotMap[hour] = [];
+      slotMap[hour].push({ condition: h.condition, map: h.map, timeRange: h.timeRange, source: "history" });
+    });
+    SCRAPED_DATA.active.forEach(a => {
+      const hour = parseInt(a.timeRange.split(":")[0], 10);
+      if (!slotMap[hour]) slotMap[hour] = [];
+      slotMap[hour].push({ condition: a.condition, map: a.map, timeRange: a.timeRange, source: "live" });
+    });
+    SCRAPED_DATA.upcoming.filter(u => u.date && u.date.includes("19.")).forEach(u => {
+      const hour = parseInt(u.timeRange.split(":")[0], 10);
+      if (!slotMap[hour]) slotMap[hour] = [];
+      slotMap[hour].push({ condition: u.condition, map: u.map, timeRange: u.timeRange, source: "upcoming", countdownH: u.countdownH, countdownM: u.countdownM });
+    });
+    return Array.from({ length: 24 }, (_, hour) => ({
+      hour, entries: slotMap[hour] || [],
+      timeRange: `${String(hour).padStart(2,"0")}:00 \u2013 ${String(hour+1).padStart(2,"0")}:00`,
+      simulated: false,
+    }));
+  };
+
+  // FUTURE DAYS: simulated, clearly labeled
+  const buildSimulatedSlots = (dayOffset) => Array.from({ length: 24 }, (_, hour) => {
+    const condIdx = (dayOffset * 7 + Math.floor(hour / 2)) % allConditions.length;
+    const mapIdx  = (dayOffset * 3 + hour) % allMaps.length;
+    return {
+      hour,
+      entries: [{ condition: allConditions[condIdx], map: allMaps[mapIdx], source: "simulated" }],
+      timeRange: `${String(hour).padStart(2,"0")}:00 \u2013 ${String(hour+1).padStart(2,"0")}:00`,
+      simulated: true,
+    };
+  });
+
+  const slots = selectedDay === 0 ? buildTodaySlots() : buildSimulatedSlots(selectedDay);
+  const displayed = filterFavs
+    ? slots.filter(s => s.entries.some(e => favs.includes(e.condition)))
+    : slots.filter(s => s.entries.length > 0);
+
+  const sourceLabel = (source) => {
+    if (source === "live")      return <span className="text-green-400 text-xs font-bold flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block"></span>LIVE</span>;
+    if (source === "upcoming")  return <span className="text-orange-400 text-xs">⏳ Bald</span>;
+    if (source === "history")   return <span className="text-gray-500 text-xs">✓ Gelaufen</span>;
+    if (source === "simulated") return <span className="text-gray-700 text-xs italic">Vorschau</span>;
+    return null;
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -663,14 +690,14 @@ function WeekView({ favs, toggleFav, onToast }) {
           }`}>
           ⭐ Nur Favoriten
         </button>
-        <span className="text-gray-600 text-xs">{displayed.length} Slots</span>
+        <span className="text-gray-600 text-xs">{displayed.length} Zeitslots</span>
       </div>
 
       {/* Hourly Slots */}
       <div className="flex flex-col gap-1.5">
         {displayed.map((slot, i) => {
-          const meta = getMeta(slot.condition);
-          const mapColor = MAP_COLORS[slot.map] || "#6b7280";
+          
+            
           const isNow = selectedDay === 0 && slot.hour === nowHour;
           const isPast = selectedDay === 0 && slot.hour < nowHour;
           return (
@@ -2249,7 +2276,7 @@ export default function App() {
           </svg>
           <div>
             <div className="flex items-baseline gap-2">
-              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v2.0</span></h1>
+              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v2.1</span></h1>
               
               </div>
               <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">{t.tagline}</p>
@@ -2286,7 +2313,7 @@ export default function App() {
                 onClick={toggleTheme}
                 title={dark ? "Light Mode" : "Dark Mode"}
                 className="text-xs font-semibold px-3 py-1.5 rounded-lg border-2 border-gray-700 bg-gray-900 text-gray-300 hover:text-white hover:border-gray-500 transition-all"
-              >{dark ? "☀️ Light" : "🌙 Dark"}"}</button>
+              >{dark ? "☀️ Light" : "🌙 Dark"}</button>
             
         </div>
       </div>
