@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useContext, createContext } from "react";
 
 const CONDITION_META = {
   "Close Scrutiny":       { icon: "🔍", color: "#f97316", desc: "Erhöhte Feindaktivität" },
@@ -52,7 +52,7 @@ const HISTORY_DATA = [
   { condition: "Close Scrutiny",        map: "Spaceport",         timeRange: "12:00 – 13:00", date: "Gestern" },
 ];
 
-// --- Scraped live data from arcraiders.com/de/map-conditions (refreshed on load) ---
+// --- Fallback-Daten (statisch, werden durch useLiveData ersetzt wenn API verfuegbar) ---
 const SCRAPED_DATA = {
   fetchedAt: new Date().toISOString(),
   active: [
@@ -76,7 +76,70 @@ const SCRAPED_DATA = {
   ],
 };
 
-function getMeta(condition) {
+// ── Live-Daten Context ───────────────────────────────────────────────────────────
+  // Alle Child-Komponenten greifen per Context auf liveData zu.
+  // Kein Prop-Drilling noetig.
+  const LiveDataContext = createContext(SCRAPED_DATA);
+  function useLiveDataCtx() { return useContext(LiveDataContext); }
+
+  // ── Live-Daten Hook ───────────────────────────────────────────────────────────
+  // Trage hier deine API-URL ein sobald ein CORS-Proxy oder eigene API verfuegbar ist.
+  // Erwartet JSON: { active: [...], upcoming: [...] } - gleiche Struktur wie SCRAPED_DATA.
+  const LIVE_API_URL = null; // z.B. "https://mein-proxy.example.com/arc-conditions"
+
+  function useLiveData(addToast) {
+    const [liveData, setLiveData] = useState(SCRAPED_DATA);
+    const [fetchStatus, setFetchStatus] = useState(LIVE_API_URL ? "loading" : "fallback");
+    const [lastFetch, setLastFetch] = useState(null);
+
+    const doFetch = useCallback(async () => {
+      if (!LIVE_API_URL) { setFetchStatus("fallback"); return; }
+      setFetchStatus("loading");
+      try {
+        const res = await fetch(LIVE_API_URL, { cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const json = await res.json();
+        setLiveData({ ...json, fetchedAt: new Date().toISOString() });
+        setFetchStatus("live");
+        setLastFetch(new Date());
+        if (addToast) addToast("Live-Daten geladen", "success", 2500);
+      } catch (err) {
+        setFetchStatus("error");
+        setLiveData(SCRAPED_DATA);
+        if (addToast) addToast("Fetch fehlgeschlagen - Fallback aktiv", "warning", 4000);
+      }
+    }, [addToast]);
+
+    useEffect(() => {
+      doFetch();
+      const t = setInterval(doFetch, 60000);
+      return () => clearInterval(t);
+    }, [doFetch]);
+
+    return { liveData, fetchStatus, lastFetch, refetch: doFetch };
+  }
+
+  function LiveStatusBadge({ fetchStatus, lastFetch }) {
+    const cfgMap = {
+      live:     { bg: "#14532d", color: "#22c55e", pulse: true,  label: "LIVE" },
+      loading:  { bg: "#1c1917", color: "#f59e0b", pulse: false, label: "Laedt" },
+      fallback: { bg: "#1c1917", color: "#6b7280", pulse: false, label: "Fallback" },
+      error:    { bg: "#450a0a", color: "#ef4444", pulse: false, label: "Fehler" },
+    };
+    const cfg = cfgMap[fetchStatus] || cfgMap.fallback;
+    return (
+      <span
+        title={lastFetch ? "Zuletzt: " + lastFetch.toLocaleTimeString("de-DE") : "Kein Live-Fetch (Fallback)"}
+        style={{ backgroundColor: cfg.bg, color: cfg.color, border: "1px solid " + cfg.color + "55" }}
+        className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full cursor-default select-none shrink-0"
+      >
+        {cfg.pulse && <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />}
+        {cfg.label}
+      </span>
+    );
+  }
+
+  function getMeta(condition) {
   return CONDITION_META[condition] || { icon: "🗺️", color: "#6b7280", desc: "" };
 }
 
@@ -486,6 +549,7 @@ const MAP_INFO = {
 function MapCard({ mapName, favs, toggleFav, onToast }) {
   const color = MAP_COLORS[mapName] || "#6b7280";
   const info = MAP_INFO[mapName] || { icon: "🗺️", desc: "" };
+  const SCRAPED_DATA = useLiveDataCtx();
 
   const activeHere = SCRAPED_DATA.active.filter(a => a.map === mapName);
   const upcomingHere = SCRAPED_DATA.upcoming.filter(u => u.map === mapName).slice(0, 3);
@@ -591,6 +655,7 @@ function MapsView({ favs, toggleFav, onToast }) {
 
 // ── Wochenansicht / Kalender-View ────────────────────────────────────────────────────
 function WeekView({ favs, toggleFav, onToast }) {
+  const SCRAPED_DATA = useLiveDataCtx();
   // Generate 7 days starting today
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
@@ -648,7 +713,8 @@ function WeekView({ favs, toggleFav, onToast }) {
     ? slots.filter(s => s.entries.some(e => favs.includes(e.condition)))
     : slots.filter(s => s.entries.length > 0);
 
-  const sourceLabel = (source) => {
+  // sourceLabel war toter Code (nirgends aufgerufen) — entfernt
+    const _sourceLabel = (source) => {
     if (source === "live")      return <span className="text-green-400 text-xs font-bold flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block"></span>LIVE</span>;
     if (source === "upcoming")  return <span className="text-orange-400 text-xs">⏳ Bald</span>;
     if (source === "history")   return <span className="text-gray-500 text-xs">✓ Gelaufen</span>;
@@ -695,30 +761,28 @@ function WeekView({ favs, toggleFav, onToast }) {
 
       {/* Hourly Slots */}
       <div className="flex flex-col gap-1.5">
-        {displayed.map((slot, i) => {
-          
-            
+        {displayed.flatMap((slot, i) =>
+        slot.entries.map((entry, j) => {
+          const meta = getMeta(entry.condition);
+          const mapColor = MAP_COLORS[entry.map] || "#6b7280";
           const isNow = selectedDay === 0 && slot.hour === nowHour;
           const isPast = selectedDay === 0 && slot.hour < nowHour;
           return (
-            <div key={i}
+            <div key={`${i}-${j}`}
               style={{ borderColor: isNow ? meta.color : "transparent", opacity: isPast ? 0.45 : 1 }}
               className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 ${
                 isNow ? "bg-gray-800" : "bg-gray-900"
               }`}>
-              {/* Time */}
               <div className="w-14 shrink-0 text-right">
                 <span className={`text-xs font-mono ${ isNow ? "text-orange-400 font-bold" : isPast ? "text-gray-600" : "text-gray-400" }`}>
                   {String(slot.hour).padStart(2,"0")}:00
                 </span>
               </div>
-              {/* Condition */}
               <span className="text-lg">{meta.icon}</span>
               <div className="flex-1 min-w-0">
-                <p style={{ color: meta.color }} className="text-sm font-semibold truncate">{slot.condition}</p>
-                <span style={{ color: mapColor }} className="text-xs">{slot.map}</span>
+                <p style={{ color: meta.color }} className="text-sm font-semibold truncate">{entry.condition}</p>
+                <span style={{ color: mapColor }} className="text-xs">{entry.map}</span>
               </div>
-              {/* Badges */}
               <div className="flex items-center gap-2 shrink-0">
                 {isNow && (
                   <span className="flex items-center gap-1 text-green-400 text-xs font-semibold bg-green-400/10 px-2 py-0.5 rounded-full">
@@ -726,11 +790,12 @@ function WeekView({ favs, toggleFav, onToast }) {
                     LIVE
                   </span>
                 )}
-                <StarButton condition={slot.condition} favs={favs} toggle={toggleFav} onToast={onToast} />
+                <StarButton condition={entry.condition} favs={favs} toggle={toggleFav} onToast={onToast} />
               </div>
             </div>
           );
-        })}
+        })
+      )}
         {displayed.length === 0 && (
           <div className="text-center py-10 text-gray-600">
             <p className="text-3xl mb-2">⭐</p>
@@ -992,7 +1057,7 @@ function LoadoutView() {
   const [mapFilter, setMapFilter] = useState("all");
   const [filter, setFilter] = useState("all");
 
-  const applysuggestion = (cond) => {
+  const applySuggestion = (cond) => {
     const s = LOADOUT_SUGGESTIONS[cond] || LOADOUT_SUGGESTIONS["default"];
     setSlots(s);
     setSelectedCond(cond);
@@ -1101,12 +1166,13 @@ function LoadoutView() {
 }
 
 // ── Session-Planer ──────────────────────────────────────────────────────────
-function SessionPlannerView({ favs, toggleFav, onToast }) {
+function SessionPlannerView({  favs, toggleFav, onToast }) {
   const [hours, setHours] = useState(2);
   const [startNow, setStartNow] = useState(true);
   const [customStart, setCustomStart] = useState("");
 
-  // Build a flat timeline: active + upcoming, each with absolute start offset in minutes
+  const SCRAPED_DATA = useLiveDataCtx();
+    // Build a flat timeline: active + upcoming, each with absolute start offset in minutes
   const timeline = [
     ...SCRAPED_DATA.active.map(a => ({ ...a, startMin: 0, endMin: 60 })),
     ...SCRAPED_DATA.upcoming.map(u => ({
@@ -1258,6 +1324,7 @@ function SessionPlannerView({ favs, toggleFav, onToast }) {
 
 // ── Squad-Koordination ───────────────────────────────────────────────────────
 function SquadView() {
+    const SCRAPED_DATA = useLiveDataCtx();
   const [selectedCond, setSelectedCond] = useState("");
   const [selectedMap, setSelectedMap]   = useState("");
   const [selectedTime, setSelectedTime] = useState("");
@@ -1458,7 +1525,7 @@ function DiscordView() {
           { name: "📍 Karte",   value: item?.map || "Spaceport",          inline: true },
           { name: "🕒 Uhrzeit", value: item?.timeRange || "11:00 – 12:00", inline: true },
         ],
-        footer: { text: "ARC Twix v1.8 · arcraiders.com" },
+        footer: { text: "ARC Twix v2.2 · arcraiders.com" },
         timestamp: new Date().toISOString(),
       }],
     };
@@ -2020,7 +2087,8 @@ function HistoryView({ favs, toggleFav, onToast }) {
 
 // ── Persönlicher Zeitplan ───────────────────────────────────────────────────
 function NextChanceView({ favs, toggleFav, onToast }) {
-  // For each condition, find the next upcoming slot
+  const SCRAPED_DATA = useLiveDataCtx(); // live data context
+    // For each condition, find the next upcoming slot
   const allConditions = Object.keys(CONDITION_META);
 
   const schedule = allConditions.map(condition => {
@@ -2188,6 +2256,7 @@ export default function App() {
   const [dark, toggleTheme] = useTheme();
   const [favs, toggleFav] = useFavorites();
   const [notifSettings, updateNotif] = useNotifSettings();
+    const { liveData, fetchStatus, lastFetch, refetch } = useLiveData(addToast);
   const notifiedRef = useRef(new Set());
   const [lastRefresh, setLastRefresh] = useState(new Date());
     const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -2212,7 +2281,7 @@ export default function App() {
   useEffect(() => {
     requestNotifPermission();
     const check = setInterval(() => {
-      const allUpcoming = SCRAPED_DATA.upcoming;
+      const allUpcoming = liveData.upcoming;
       allUpcoming.forEach(item => {
         if (!favs.includes(item.condition)) return;
         const key = `${item.condition}|${item.date}|${item.timeRange}`;
@@ -2242,12 +2311,12 @@ export default function App() {
   const maps = ["all", ...Object.keys(MAP_COLORS)];
   const conditions = ["all", ...Object.keys(CONDITION_META)];
 
-  const filteredActive = SCRAPED_DATA.active.filter(i =>
+  const filteredActive = liveData.active.filter(i =>
     (mapFilter === "all" || i.map === mapFilter) &&
     (filter === "all" || i.condition === filter)
   );
 
-  const filteredUpcoming = SCRAPED_DATA.upcoming.filter(i =>
+  const filteredUpcoming = liveData.upcoming.filter(i =>
     (mapFilter === "all" || i.map === mapFilter) &&
     (filter === "all" || i.condition === filter)
   );
@@ -2261,7 +2330,8 @@ export default function App() {
 
   return (
     <div className={`min-h-screen ${bg} ${text} font-sans transition-colors duration-300`}>
-      <ToastContainer toasts={toasts} remove={removeToast} />
+      <LiveDataContext.Provider value={liveData}>
+        <ToastContainer toasts={toasts} remove={removeToast} />
       {/* Header */}
       <div className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
@@ -2276,7 +2346,7 @@ export default function App() {
           </svg>
           <div>
             <div className="flex items-baseline gap-2">
-              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v2.1</span></h1>
+              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v2.2</span></h1>
               
               </div>
               <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">{t.tagline}</p>
@@ -2288,7 +2358,8 @@ export default function App() {
               ⭐ {favs.length} {favs.length > 1 ? t.favoritesPlural : t.favorites}
             </span>
           )}
-          <span className="text-gray-500 text-xs">Aktualisiert: {lastRefresh.toLocaleTimeString("de-DE")}</span>
+          <LiveStatusBadge fetchStatus={fetchStatus} lastFetch={lastFetch} />
+            <span className="text-gray-500 text-xs">Aktualisiert: {lastRefresh.toLocaleTimeString("de-DE")}</span>
           <button
             onClick={refresh}
             className="bg-orange-500 hover:bg-orange-400 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
@@ -2421,8 +2492,9 @@ export default function App() {
           {activeTab === "stats" && <StatsView />}
 
         {/* Footer */}
-        <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · Rheinische Post Mediengruppe Tracker</p>
+        <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · ARC Twix v2.2 · {fetchStatus === "live" ? "Live-Daten" : "Fallback-Daten"}</p>
       </div>
+    </LiveDataContext.Provider>
     </div>
   );
 }
