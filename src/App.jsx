@@ -97,8 +97,8 @@ function ActiveCard({ item, favs = [], toggleFav = () => {} }) {
   const [secs, setSecs] = useState(25 * 60 + 8);
 
   useEffect(() => {
-    const t = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(t);
+    const intervalId = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(intervalId);
   }, []);
 
   return (
@@ -150,8 +150,8 @@ function UpcomingRow({ item, index, favs = [], toggleFav = () => {} }) {
   const [secs, setSecs] = useState(initSecs);
 
   useEffect(() => {
-    const t = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(t);
+    const intervalId = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(intervalId);
   }, []);
 
   return (
@@ -1055,7 +1055,7 @@ function DiscordView() {
           { name: "📍 Karte",   value: item?.map || "Spaceport",          inline: true },
           { name: "🕒 Uhrzeit", value: item?.timeRange || "11:00 – 12:00", inline: true },
         ],
-        footer: { text: "ARC Twix v1.4 · arcraiders.com" },
+        footer: { text: "ARC Twix v1.5 · arcraiders.com" },
         timestamp: new Date().toISOString(),
       }],
     };
@@ -1295,7 +1295,7 @@ function NotesView() {
             <label className="text-gray-600 text-xs mb-1 block">Kategorie</label>
             <select value={tag} onChange={e => setTag(e.target.value)}
               className="w-full bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 outline-none focus:border-orange-500">
-              {NOTE_TAGS.map(t => <option key={t} value={t}>{t}</option>)}
+              {NOTE_TAGS.map(tagName => <option key={tagName} value={tagName}>{tagName}</option>)}
             </select>
           </div>
           {/* Condition */}
@@ -1333,7 +1333,7 @@ function NotesView() {
           <select value={filterTag} onChange={e => setFilterTag(e.target.value)}
             className="bg-gray-900 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 outline-none focus:border-orange-500">
             <option value="all">Alle Kategorien</option>
-            {NOTE_TAGS.map(t => <option key={t} value={t}>{t}</option>)}
+            {NOTE_TAGS.map(tagName => <option key={tagName} value={tagName}>{tagName}</option>)}
           </select>
         </div>
       )}
@@ -1392,6 +1392,147 @@ function NotesView() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ── Condition-Häufigkeitsanalyse ──────────────────────────────────────────────
+function StatsView() {
+  const allData = [...HISTORY_DATA, ...SCRAPED_DATA.active, ...SCRAPED_DATA.upcoming];
+
+  // Condition frequency
+  const condCount = {};
+  allData.forEach(item => {
+    condCount[item.condition] = (condCount[item.condition] || 0) + 1;
+  });
+  const condSorted = Object.entries(condCount).sort((a, b) => b[1] - a[1]);
+  const maxCondCount = condSorted[0]?.[1] || 1;
+
+  // Map frequency
+  const mapCount = {};
+  allData.forEach(item => {
+    mapCount[item.map] = (mapCount[item.map] || 0) + 1;
+  });
+  const mapSorted = Object.entries(mapCount).sort((a, b) => b[1] - a[1]);
+  const maxMapCount = mapSorted[0]?.[1] || 1;
+
+  // Peak hours from history
+  const hourCount = {};
+  HISTORY_DATA.forEach(item => {
+    const hour = item.timeRange.split(":")[0];
+    hourCount[hour] = (hourCount[hour] || 0) + 1;
+  });
+  const hourSorted = Object.entries(hourCount).sort((a, b) => Number(a[0]) - Number(b[0]));
+  const maxHourCount = Math.max(...Object.values(hourCount), 1);
+
+  // Today vs Yesterday
+  const todayCount = HISTORY_DATA.filter(h => h.date === "Heute").length;
+  const yesterdayCount = HISTORY_DATA.filter(h => h.date === "Gestern").length;
+  const totalTracked = allData.length;
+
+  return (
+    <div className="flex flex-col gap-6">
+      <p className="text-gray-500 text-xs">Analyse der Condition-Häufigkeit basierend auf Verlauf (heute & gestern) plus aktuelle Daten.</p>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          { label: "Getrackte Events", value: totalTracked, color: "#f97316" },
+          { label: "Heute gelaufen",   value: todayCount,   color: "#22c55e" },
+          { label: "Gestern",          value: yesterdayCount, color: "#3b82f6" },
+        ].map((s, i) => (
+          <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-3 text-center">
+            <p style={{ color: s.color }} className="text-2xl font-bold">{s.value}</p>
+            <p className="text-gray-500 text-xs mt-0.5">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Condition Frequency */}
+      <div>
+        <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-3">⚡ Häufigste Conditions</p>
+        <div className="flex flex-col gap-2">
+          {condSorted.map(([cond, count], i) => {
+            const meta = getMeta(cond);
+            const pct = Math.round((count / maxCondCount) * 100);
+            const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+            return (
+              <div key={cond} className="flex items-center gap-3">
+                <span className="text-xs w-6 text-center text-gray-500 shrink-0">{medal}</span>
+                <span className="text-base shrink-0">{meta.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span style={{ color: meta.color }} className="text-xs font-semibold truncate">{cond}</span>
+                    <span className="text-gray-500 text-xs ml-2 shrink-0">{count}x</span>
+                  </div>
+                  <div className="w-full bg-gray-800 rounded-full h-1.5">
+                    <div style={{ width: `${pct}%`, backgroundColor: meta.color }}
+                      className="h-1.5 rounded-full transition-all duration-500" />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Map Frequency */}
+      <div>
+        <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-3">🗺️ Aktivste Karten</p>
+        <div className="flex flex-col gap-2">
+          {mapSorted.map(([map, count], i) => {
+            const color = MAP_COLORS[map] || "#6b7280";
+            const info  = MAP_INFO[map] || { icon: "🗺️" };
+            const pct   = Math.round((count / maxMapCount) * 100);
+            return (
+              <div key={map} className="flex items-center gap-3">
+                <span className="text-base shrink-0">{info.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span style={{ color }} className="text-xs font-semibold truncate">{map}</span>
+                    <span className="text-gray-500 text-xs ml-2 shrink-0">{count} Events</span>
+                  </div>
+                  <div className="w-full bg-gray-800 rounded-full h-1.5">
+                    <div style={{ width: `${pct}%`, backgroundColor: color }}
+                      className="h-1.5 rounded-full transition-all duration-500" />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Peak Hours */}
+      <div>
+        <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-3">🕒 Aktivste Stunden (Verlauf)</p>
+        <div className="flex items-end gap-1 h-20">
+          {hourSorted.map(([hour, count]) => {
+            const pct = Math.round((count / maxHourCount) * 100);
+            return (
+              <div key={hour} className="flex-1 flex flex-col items-center gap-1">
+                <div className="w-full relative" style={{ height: "56px" }}>
+                  <div
+                    style={{ height: `${pct}%`, backgroundColor: "#f97316" }}
+                    className="absolute bottom-0 left-0 right-0 rounded-t transition-all duration-500 opacity-80"
+                  />
+                </div>
+                <span className="text-gray-600 text-xs">{hour}h</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Fun fact */}
+      {condSorted.length > 0 && (
+        <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl px-4 py-3">
+          <p className="text-orange-400 text-xs font-bold mb-1">💡 Trend</p>
+          <p className="text-gray-300 text-sm">
+            <span style={{ color: getMeta(condSorted[0][0]).color }} className="font-semibold">{condSorted[0][0]}</span> ist die häufigste Condition mit <span className="text-white font-bold">{condSorted[0][1]} Erscheinungen</span> im Tracking-Zeitraum.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -1540,7 +1681,107 @@ function NextChanceView({ favs, toggleFav }) {
   );
 }
 
+// ── Mehrsprachigkeit ─────────────────────────────────────────────────────
+const TRANSLATIONS = {
+  de: {
+    appName: "ARC Twix",
+    tagline: "Map Conditions",
+    tabMain: "📋 Übersicht",
+    tabSchedule: "🗓️ Mein Zeitplan",
+    tabHistory: "📜 Verlauf",
+    tabMaps: "🗺️ Karten",
+    tabLoot: "🎁 Loot-Guide",
+    tabLoadout: "🎒 Loadout",
+    tabSession: "⏱️ Session",
+    tabSquad: "👥 Squad",
+    tabDiscord: "🤖 Discord",
+    tabNotes: "📝 Notizen",
+    tabStats: "📊 Stats",
+    activeNow: "Jetzt Aktiv",
+    comingUp: "Bald Verfügbar",
+    refreshed: "Aktualisiert",
+    refresh: "🔄 Refresh",
+    allMaps: "🗺️ Alle Karten",
+    allConditions: "⚡ Alle Bedingungen",
+    noActive: "Keine aktiven Bedingungen für diesen Filter.",
+    noUpcoming: "Keine bevorstehenden Bedingungen für diesen Filter.",
+    favorites: "Favorit",
+    favoritesPlural: "Favoriten",
+    live: "LIVE",
+    footer: "Daten von arcraiders.com/de/map-conditions · ARC Twix",
+  },
+  en: {
+    appName: "ARC Twix",
+    tagline: "Map Conditions",
+    tabMain: "📋 Overview",
+    tabSchedule: "🗓️ My Schedule",
+    tabHistory: "📜 History",
+    tabMaps: "🗺️ Maps",
+    tabLoot: "🎁 Loot Guide",
+    tabLoadout: "🎒 Loadout",
+    tabSession: "⏱️ Session",
+    tabSquad: "👥 Squad",
+    tabDiscord: "🤖 Discord",
+    tabNotes: "📝 Notes",
+    tabStats: "📊 Stats",
+    activeNow: "Active Now",
+    comingUp: "Coming Up",
+    refreshed: "Updated",
+    refresh: "🔄 Refresh",
+    allMaps: "🗺️ All Maps",
+    allConditions: "⚡ All Conditions",
+    noActive: "No active conditions for this filter.",
+    noUpcoming: "No upcoming conditions for this filter.",
+    favorites: "Favorite",
+    favoritesPlural: "Favorites",
+    live: "LIVE",
+    footer: "Data from arcraiders.com/map-conditions · ARC Twix",
+  },
+};
+
+const LangContext = typeof window !== "undefined"
+  ? require !== undefined ? null : null
+  : null;
+
+// Global lang state — readable anywhere
+let _globalT = TRANSLATIONS.de;
+
+function useLang() {
+  const [lang, setLang] = useState(() => {
+    try { return localStorage.getItem("arc_lang") || "de"; }
+    catch { return "de"; }
+  });
+  const toggle = () => {
+    setLang(l => {
+      const next = l === "de" ? "en" : "de";
+      localStorage.setItem("arc_lang", next);
+      return next;
+    });
+  };
+  const t = TRANSLATIONS[lang] || TRANSLATIONS.de;
+  _globalT = t; // keep global in sync
+  return [lang, toggle, t];
+}
+
+// ── Dark/Light Mode Hook ──────────────────────────────────────────────────────
+function useTheme() {
+  const [dark, setDark] = useState(() => {
+    try { return localStorage.getItem("arc_theme") !== "light"; }
+    catch { return true; }
+  });
+  const toggle = () => {
+    setDark(d => {
+      localStorage.setItem("arc_theme", d ? "light" : "dark");
+      return !d;
+    });
+  };
+  return [dark, toggle];
+}
+
 export default function App() {
+  const [lang, toggleLang, t] = useLang();
+  _globalT = t;
+  const [dark, toggleTheme] = useTheme();
   const [favs, toggleFav] = useFavorites();
   const notifiedRef = useRef(new Set());
   const [lastRefresh, setLastRefresh] = useState(new Date());
@@ -1591,8 +1832,15 @@ export default function App() {
     (filter === "all" || i.condition === filter)
   );
 
+  // Apply theme classes to root
+  const bg      = dark ? "bg-gray-950"  : "bg-gray-100";
+  const surface = dark ? "bg-gray-900"  : "bg-white";
+  const border  = dark ? "border-gray-800" : "border-gray-200";
+  const text    = dark ? "text-white"   : "text-gray-900";
+  const subtext = dark ? "text-gray-400" : "text-gray-500";
+
   return (
-    <div className="min-h-screen bg-gray-950 text-white font-sans">
+    <div className={`min-h-screen ${bg} ${text} font-sans transition-colors duration-300`}>
       {/* Header */}
       <div className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
@@ -1608,15 +1856,15 @@ export default function App() {
           <div>
             <div className="flex items-baseline gap-2">
               <h1 className="font-bold text-lg text-white leading-none">ARC Twix</h1>
-              <span className="text-gray-600 text-xs font-mono">v1.4</span>
+              <span className={`${subtext} text-xs font-mono`}>v1.5</span>
             </div>
-            <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">Map Conditions</p>
+            <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">{t.tagline}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           {favs.length > 0 && (
             <span className="bg-yellow-400/10 text-yellow-400 text-xs px-2 py-1 rounded-full border border-yellow-400/30">
-              ⭐ {favs.length} Favorit{favs.length > 1 ? "en" : ""}
+              ⭐ {favs.length} {favs.length > 1 ? t.favoritesPlural : t.favorites}
             </span>
           )}
           <span className="text-gray-500 text-xs">Aktualisiert: {lastRefresh.toLocaleTimeString("de-DE")}</span>
@@ -1633,16 +1881,17 @@ export default function App() {
       <div className="border-b border-gray-800 bg-gray-950 sticky top-[73px] z-10">
         <div className="max-w-3xl mx-auto px-4 flex gap-1 pt-2">
           {[
-            { id: "main",     label: "📋 Übersicht" },
-            { id: "schedule", label: "🗓️ Mein Zeitplan" },
-            { id: "history",  label: "📜 Verlauf" },
-            { id: "maps",     label: "🗺️ Karten" },
-            { id: "loot",     label: "🎁 Loot-Guide" },
-            { id: "loadout",  label: "🎒 Loadout" },
-            { id: "session",  label: "⏱️ Session" },
-            { id: "squad",    label: "👥 Squad" },
-            { id: "discord",  label: "🤖 Discord" },
-            { id: "notes",    label: "📝 Notizen" },
+            { id: "main",     label: t.tabMain },
+            { id: "schedule", label: t.tabSchedule },
+            { id: "history",  label: t.tabHistory },
+            { id: "maps",     label: t.tabMaps },
+            { id: "loot",     label: t.tabLoot },
+            { id: "loadout",  label: t.tabLoadout },
+            { id: "session",  label: t.tabSession },
+            { id: "squad",    label: t.tabSquad },
+            { id: "discord",  label: t.tabDiscord },
+            { id: "notes",    label: t.tabNotes },
+            { id: "stats",    label: t.tabStats },
           ].map(tab => (
             <button
               key={tab.id}
@@ -1705,7 +1954,7 @@ export default function App() {
           </div>
           <div className="flex flex-col gap-2">
             {filteredUpcoming.length === 0
-              ? <p className="text-gray-500 text-sm">Keine bevorstehenden Bedingungen für diesen Filter.</p>
+              ? <p className="text-gray-500 text-sm">{t.noUpcoming}</p>
               : filteredUpcoming.map((item, i) => <UpcomingRow key={i} item={item} index={i} favs={favs} toggleFav={toggleFav} />)
             }
           </div>
@@ -1726,6 +1975,7 @@ export default function App() {
         {activeTab === "squad" && <SquadView />}
         {activeTab === "discord" && <DiscordView />}
         {activeTab === "notes" && <NotesView />}
+        {activeTab === "stats" && <StatsView />}
 
         {/* Footer */}
         <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · Rheinische Post Mediengruppe Tracker</p>
