@@ -76,6 +76,88 @@ const SCRAPED_DATA = {
   ],
 };
 
+// ── PWA: Manifest + Install-Prompt ─────────────────────────────────────────
+function usePWA() {
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [installed, setInstalled] = useState(false);
+
+  useEffect(() => {
+    // Dynamisch manifest.json via Blob injizieren
+    const manifest = {
+      name: "ARC Raiders – Map Conditions Tracker",
+      short_name: "ARC Twix",
+      description: "Echtzeit Map-Conditions Tracker für ARC Raiders",
+      start_url: ".",
+      display: "standalone",
+      background_color: "#111827",
+      theme_color: "#f97316",
+      orientation: "portrait-primary",
+      icons: [
+        { src: "https://arcraiders.com/favicon.ico", sizes: "64x64",   type: "image/x-icon" },
+        { src: "https://arcraiders.com/favicon.ico", sizes: "192x192", type: "image/x-icon" },
+        { src: "https://arcraiders.com/favicon.ico", sizes: "512x512", type: "image/x-icon" },
+      ],
+    };
+    const blob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
+    const url  = URL.createObjectURL(blob);
+    let link = document.querySelector("link[rel='manifest']");
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "manifest";
+      document.head.appendChild(link);
+    }
+    link.href = url;
+
+    // Theme-color Meta
+    let meta = document.querySelector("meta[name='theme-color']");
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "theme-color";
+      document.head.appendChild(meta);
+    }
+    meta.content = "#111827";
+
+    // Install-Prompt abfangen
+    const handler = (e) => { e.preventDefault(); setInstallPrompt(e); };
+    window.addEventListener("beforeinstallprompt", handler);
+
+    // Bereits installiert?
+    if (window.matchMedia("(display-mode: standalone)").matches) setInstalled(true);
+    window.addEventListener("appinstalled", () => { setInstalled(true); setInstallPrompt(null); });
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler);
+      URL.revokeObjectURL(url);
+    };
+  }, []);
+
+  const triggerInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === "accepted") { setInstalled(true); setInstallPrompt(null); }
+  };
+
+  return { installPrompt, installed, triggerInstall };
+}
+
+function PWAInstallButton({ installPrompt, installed, triggerInstall }) {
+  if (installed) return (
+    <span className="flex items-center gap-1 text-green-400 text-xs font-semibold bg-green-400/10 px-2 py-0.5 rounded-full">
+      📲 Installiert
+    </span>
+  );
+  if (!installPrompt) return null;
+  return (
+    <button
+      onClick={triggerInstall}
+      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full border-2 border-orange-500 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 transition-colors"
+    >
+      📲 App installieren
+    </button>
+  );
+}
+
 // ── Live-Daten Context ───────────────────────────────────────────────────────────
   // Alle Child-Komponenten greifen per Context auf liveData zu.
   // Kein Prop-Drilling noetig.
@@ -1526,7 +1608,7 @@ function DiscordView() {
           { name: "📍 Karte",   value: item?.map || "Spaceport",          inline: true },
           { name: "🕒 Uhrzeit", value: item?.timeRange || "11:00 – 12:00", inline: true },
         ],
-        footer: { text: "ARC Twix v2.3 · arcraiders.com" },
+        footer: { text: "ARC Twix v2.4 · arcraiders.com" },
         timestamp: new Date().toISOString(),
       }],
     };
@@ -2386,6 +2468,7 @@ function useTheme() {
 }
 
 export default function App() {
+  const { installPrompt, installed: pwaInstalled, triggerInstall } = usePWA();
   const [lang, toggleLang, t] = useLang();
     const [toasts, addToast, removeToast] = useToast();
   _globalT = t;
@@ -2491,7 +2574,7 @@ export default function App() {
           </svg>
           <div>
             <div className="flex items-baseline gap-2">
-              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v2.3</span></h1>
+              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v2.4</span></h1>
               
               </div>
               <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">{t.tagline}</p>
@@ -2503,7 +2586,8 @@ export default function App() {
               ⭐ {favs.length} {favs.length > 1 ? t.favoritesPlural : t.favorites}
             </span>
           )}
-          <LiveStatusBadge fetchStatus={fetchStatus} lastFetch={lastFetch} />
+          <PWAInstallButton installPrompt={installPrompt} installed={pwaInstalled} triggerInstall={triggerInstall} />
+            <LiveStatusBadge fetchStatus={fetchStatus} lastFetch={lastFetch} />
             <span className="text-gray-500 text-xs">Aktualisiert: {lastRefresh.toLocaleTimeString("de-DE")}</span>
           <button
             onClick={refresh}
@@ -2694,7 +2778,7 @@ export default function App() {
           {activeTab === "stats" && <StatsView />}
 
         {/* Footer */}
-        <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · ARC Twix v2.3 · {fetchStatus === "live" ? "Live-Daten" : "Fallback-Daten"}</p>
+        <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · ARC Twix v2.4 · {fetchStatus === "live" ? "Live-Daten" : "Fallback-Daten"}</p>
       </div>
     </LiveDataContext.Provider>
     </div>
