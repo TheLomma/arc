@@ -94,12 +94,35 @@ function Countdown({ seconds }) {
 function ActiveCard({ item, favs = [], toggleFav = () => {}, onToast }) {
   const meta = getMeta(item.condition);
   const mapColor = MAP_COLORS[item.map] || "#6b7280";
-  const [secs, setSecs] = useState(25 * 60 + 8);
+
+  // Parse end time from timeRange e.g. "11:00 – 12:00" → end = 12:00
+  const getEndSecs = () => {
+    try {
+      const endStr = item.timeRange.split("\u2013")[1]?.trim() || item.timeRange.split("-")[1]?.trim();
+      if (!endStr) return 25 * 60;
+      const [h, m] = endStr.split(":").map(Number);
+      const now = new Date();
+      const end = new Date();
+      end.setHours(h, m, 0, 0);
+      let diff = Math.floor((end - now) / 1000);
+      if (diff < 0) diff += 24 * 3600; // next day
+      return diff;
+    } catch { return 25 * 60; }
+  };
+
+  const endTimeLabel = (() => {
+    try {
+      return (item.timeRange.split("\u2013")[1]?.trim() || item.timeRange.split("-")[1]?.trim() || "");
+    } catch { return ""; }
+  })();
+
+  const [secs, setSecs] = useState(getEndSecs);
 
   useEffect(() => {
+    setSecs(getEndSecs());
     const intervalId = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(intervalId);
-  }, []);
+  }, [item.timeRange]);
 
   return (
     <div
@@ -136,7 +159,10 @@ function ActiveCard({ item, favs = [], toggleFav = () => {}, onToast }) {
         </span>
         <div className="text-right">
           <p className="text-white text-xs font-mono">{item.timeRange}</p>
-          <Countdown seconds={secs} />
+          <div className="flex items-center gap-1">
+            <span className="text-gray-600 text-xs">endet in</span>
+            <Countdown seconds={secs} />
+          </div>
         </div>
       </div>
     </div>
@@ -231,10 +257,151 @@ function ToastContainer({ toasts, remove }) {
   );
 }
 
-function requestNotifPermission() {
-  if ("Notification" in window && Notification.permission === "default") {
-    Notification.requestPermission();
-  }
+function useNotifSettings() {
+  const [settings, setSettings] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("arc_notif") || '{"enabled":false,"minutesBefore":15,"favsOnly":true}'); }
+    catch { return { enabled: false, minutesBefore: 15, favsOnly: true }; }
+  });
+  const update = (patch) => {
+    setSettings(prev => {
+      const next = { ...prev, ...patch };
+      localStorage.setItem("arc_notif", JSON.stringify(next));
+      return next;
+    });
+  };
+  return [settings, update];
+}
+
+async function requestNotifPermission() {
+  if (!("Notification" in window)) return "unsupported";
+  if (Notification.permission === "granted") return "granted";
+  if (Notification.permission === "denied") return "denied";
+  const result = await Notification.requestPermission();
+  return result;
+}
+
+// ── Notification Settings View ───────────────────────────────────────────────
+function NotifSettingsView({ notifSettings, updateNotif }) {
+  const [permStatus, setPermStatus] = useState(
+    typeof window !== "undefined" && "Notification" in window
+      ? Notification.permission
+      : "unsupported"
+  );
+  const [testSent, setTestSent] = useState(false);
+
+  const handleEnable = async () => {
+    const result = await requestNotifPermission();
+    setPermStatus(result);
+    if (result === "granted") {
+      updateNotif({ enabled: true });
+      new Notification("✅ ARC Twix Notifications aktiv!", {
+        body: "Du wirst rechtzeitig über deine Conditions informiert.",
+        icon: "https://arcraiders.com/favicon.ico",
+      });
+    }
+  };
+
+  const handleTest = () => {
+    if (Notification.permission !== "granted") return;
+    new Notification("🔔 Test-Benachrichtigung", {
+      body: `⚡ Hidden Bunker startet in ${notifSettings.minutesBefore} Min! 📍 Spaceport`,
+      icon: "https://arcraiders.com/favicon.ico",
+    });
+    setTestSent(true);
+    setTimeout(() => setTestSent(false), 3000);
+  };
+
+  const granted = permStatus === "granted";
+  const denied  = permStatus === "denied";
+  const unsupported = permStatus === "unsupported";
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <p className="text-white text-sm font-bold">🔔 Browser-Benachrichtigungen</p>
+        <span style={{ backgroundColor: granted ? "#14532d" : "#1f2937", color: granted ? "#22c55e" : "#6b7280" }}
+          className="text-xs font-semibold px-2 py-0.5 rounded-full">
+          {unsupported ? "Nicht unterstützt" : granted ? "✅ Erlaubt" : denied ? "❌ Blockiert" : "⏳ Ausstehend"}
+        </span>
+      </div>
+
+      {unsupported && (
+        <p className="text-red-400 text-xs">Dein Browser unterstützt keine Push-Notifications.</p>
+      )}
+
+      {denied && (
+        <div className="bg-red-950/40 border border-red-500/30 rounded-xl px-4 py-3">
+          <p className="text-red-400 text-xs font-bold mb-1">❌ Notifications blockiert</p>
+          <p className="text-gray-400 text-xs">Bitte in den Browser-Einstellungen manuell erlauben (🔒 Schloss-Symbol in der Adressleiste).</p>
+        </div>
+      )}
+
+      {!granted && !denied && !unsupported && (
+        <button onClick={handleEnable}
+          className="py-2.5 rounded-lg text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white transition-colors">
+          🔔 Notifications erlauben
+        </button>
+      )}
+
+      {granted && (
+        <>
+          {/* Toggle */}
+          <div className="flex items-center justify-between">
+            <span className="text-gray-400 text-sm">Benachrichtigungen aktiv</span>
+            <button onClick={() => updateNotif({ enabled: !notifSettings.enabled })}
+              className={`relative w-11 h-6 rounded-full transition-colors ${
+                notifSettings.enabled ? "bg-orange-500" : "bg-gray-700"
+              }`}>
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                notifSettings.enabled ? "translate-x-5" : "translate-x-0"
+              }`} />
+            </button>
+          </div>
+
+          {/* Vorlauf */}
+          <div>
+            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-3">⏰ Vorlauf vor Condition-Start</p>
+            <div className="flex gap-2 flex-wrap">
+              {[5, 10, 15, 30].map(min => (
+                <button key={min} onClick={() => updateNotif({ minutesBefore: min })}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition-all ${
+                    notifSettings.minutesBefore === min
+                      ? "border-orange-500 bg-orange-500/10 text-orange-400"
+                      : "border-gray-700 bg-gray-900 text-gray-500 hover:text-gray-300"
+                  }`}>
+                  {min} Min
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Scope */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-gray-400 text-sm">Nur Favoriten benachrichtigen</p>
+              <p className="text-gray-600 text-xs">Aus = alle Conditions</p>
+            </div>
+            <button onClick={() => updateNotif({ favsOnly: !notifSettings.favsOnly })}
+              className={`relative w-11 h-6 rounded-full transition-colors ${
+                notifSettings.favsOnly ? "bg-yellow-500" : "bg-orange-500"
+              }`}>
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                notifSettings.favsOnly ? "translate-x-5" : "translate-x-0"
+              }`} />
+            </button>
+          </div>
+
+          {/* Test */}
+          <button onClick={handleTest}
+            className={`py-2 rounded-lg text-sm font-semibold transition-colors border-2 ${
+              testSent ? "border-green-500 bg-green-500/10 text-green-400" : "border-gray-700 bg-gray-900 text-gray-300 hover:text-white"
+            }`}>
+            {testSent ? "✅ Test gesendet!" : "🧪 Test-Notification senden"}
+          </button>
+        </>
+      )}
+    </div>
+  );
 }
 
 // ── Sound System ───────────────────────────────────────────────────────────────
@@ -1993,6 +2160,7 @@ export default function App() {
   _globalT = t;
   const [dark, toggleTheme] = useTheme();
   const [favs, toggleFav] = useFavorites();
+  const [notifSettings, updateNotif] = useNotifSettings();
   const notifiedRef = useRef(new Set());
   const [lastRefresh, setLastRefresh] = useState(new Date());
     const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -2081,7 +2249,7 @@ export default function App() {
           </svg>
           <div>
             <div className="flex items-baseline gap-2">
-              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v1.9</span></h1>
+              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v2.0</span></h1>
               
               </div>
               <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">{t.tagline}</p>
@@ -2114,6 +2282,11 @@ export default function App() {
                   : "border-gray-700 bg-gray-900 text-gray-500 hover:text-gray-300"
               }`}
             >{soundEnabled ? "🔔 Sound AN" : "🔇 Sound AUS"}</button>
+              <button
+                onClick={toggleTheme}
+                title={dark ? "Light Mode" : "Dark Mode"}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg border-2 border-gray-700 bg-gray-900 text-gray-300 hover:text-white hover:border-gray-500 transition-all"
+              >{dark ? "☀️ Light" : "🌙 Dark"}"}</button>
             
         </div>
       </div>
