@@ -1056,6 +1056,7 @@ function LoadoutView() {
   const [saved, setSaved] = useState(false);
   const [mapFilter, setMapFilter] = useState("all");
   const [filter, setFilter] = useState("all");
+    
 
   const applySuggestion = (cond) => {
     const s = LOADOUT_SUGGESTIONS[cond] || LOADOUT_SUGGESTIONS["default"];
@@ -2447,7 +2448,14 @@ export default function App() {
   const maps = ["all", ...Object.keys(MAP_COLORS)];
   const conditions = ["all", ...Object.keys(CONDITION_META)];
 
-  const filteredActive = liveData.active.filter(i =>
+  const [searchQuery, setSearchQuery] = useState("");
+    const searchLower = searchQuery.toLowerCase();
+    const matchesSearch = (i) =>
+      !searchQuery ||
+      i.condition.toLowerCase().includes(searchLower) ||
+      i.map.toLowerCase().includes(searchLower);
+
+    const filteredActive = liveData.active.filter(i =>
     (mapFilter === "all" || i.map === mapFilter) &&
     (filter === "all" || i.condition === filter)
   );
@@ -2467,9 +2475,9 @@ export default function App() {
   return (
     <div className={`min-h-screen ${bg} ${text} font-sans transition-colors duration-300`}>
       {alarm && <AlarmPopup alarm={alarm} onDismiss={dismissAlarm} soundEnabled={soundEnabled} />}
-      <LiveDataContext.Provider value={liveData}>
-        <ToastContainer toasts={toasts} remove={removeToast} />
-      {/* Header */}
+      <ToastContainer toasts={toasts} remove={removeToast} />
+        <LiveDataContext.Provider value={liveData}>
+        {/* Header */}
       <div className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
           {/* ARC Twix Logo */}
@@ -2561,22 +2569,79 @@ export default function App() {
       <div className="max-w-3xl mx-auto px-4 py-6 flex flex-col gap-6">
 
         {/* Main Tab content */}
-        {/* ⚡ Schnellfilter-Chips */}
-        <div className="flex flex-col gap-2">
-          <select
-            value={mapFilter}
-            onChange={e => setMapFilter(e.target.value)}
-            className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-orange-500"
-          >
-            {maps.map(m => <option key={m} value={m}>{m === "all" ? "🗺️ Alle Karten" : m}</option>)}
-          </select>
-          <select
-            value={filter}
-            onChange={e => setFilter(e.target.value)}
-            className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-orange-500"
-          >
-            {conditions.map(c => <option key={c} value={c}>{c === "all" ? "⚡ Alle Bedingungen" : c}</option>)}
-          </select>
+        {/* 🔍 Suchleiste */}
+          {activeTab === "main" && (
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none">🔍</span>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Condition oder Karte suchen…"
+                className="w-full bg-gray-900 border border-gray-700 text-white text-sm rounded-xl pl-9 pr-9 py-2.5 outline-none focus:border-orange-500 placeholder-gray-600 transition-colors"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-lg leading-none"
+                >×</button>
+              )}
+            </div>
+          )}
+
+          {/* ⚡ Map-Filter Toggle-Buttons */}
+        <div className="flex flex-col gap-3">
+          {/* Map-Filter */}
+          <div>
+            <p className="text-gray-600 text-xs font-bold uppercase tracking-widest mb-2">🗺️ Karte</p>
+            <div className="flex flex-wrap gap-1.5">
+              {maps.map(m => {
+                const col = MAP_COLORS[m];
+                const isAll = m === "all";
+                const active = mapFilter === m;
+                return (
+                  <button
+                    key={m}
+                    onClick={() => setMapFilter(m)}
+                    style={active && !isAll ? { borderColor: col, backgroundColor: col + "22", color: col } : {}}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-all whitespace-nowrap ${
+                      active
+                        ? isAll ? "border-orange-500 bg-orange-500/15 text-orange-400" : ""
+                        : "border-gray-700 bg-gray-900 text-gray-500 hover:text-gray-300 hover:border-gray-500"
+                    }`}
+                  >
+                    {isAll ? "🗺️ Alle" : `${MAP_INFO[m]?.icon || "📍"} ${m}`}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          {/* Condition-Filter */}
+          <div>
+            <p className="text-gray-600 text-xs font-bold uppercase tracking-widest mb-2">⚡ Condition</p>
+            <div className="flex flex-wrap gap-1.5">
+              {conditions.map(c => {
+                const meta = getMeta(c);
+                const isAll = c === "all";
+                const active = filter === c;
+                return (
+                  <button
+                    key={c}
+                    onClick={() => setFilter(c)}
+                    style={active && !isAll ? { borderColor: meta.color, backgroundColor: meta.color + "22", color: meta.color } : {}}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-all whitespace-nowrap ${
+                      active
+                        ? isAll ? "border-orange-500 bg-orange-500/15 text-orange-400" : ""
+                        : "border-gray-700 bg-gray-900 text-gray-500 hover:text-gray-300 hover:border-gray-500"
+                    }`}
+                  >
+                    {!isAll && <span>{meta.icon}</span>}
+                    {isAll ? "⚡ Alle" : c}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {activeTab === "main" && <>
