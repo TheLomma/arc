@@ -1525,7 +1525,7 @@ function DiscordView() {
           { name: "📍 Karte",   value: item?.map || "Spaceport",          inline: true },
           { name: "🕒 Uhrzeit", value: item?.timeRange || "11:00 – 12:00", inline: true },
         ],
-        footer: { text: "ARC Twix v2.2 · arcraiders.com" },
+        footer: { text: "ARC Twix v2.3 · arcraiders.com" },
         timestamp: new Date().toISOString(),
       }],
     };
@@ -2007,6 +2007,141 @@ function StatsView() {
   );
 }
 
+// ── Alarm-Timer System ───────────────────────────────────────────────────────
+// Zeigt ein Popup-Modal wenn eine Favoriten-Condition in X Minuten startet.
+// Nutzt notifSettings.minutesBefore als Schwellwert.
+
+function AlarmPopup({ alarm, onDismiss, soundEnabled }) {
+  const meta = getMeta(alarm.condition);
+  const mapColor = MAP_COLORS[alarm.map] || "#6b7280";
+  const [secs, setSecs] = useState(alarm.secsUntil);
+
+  useEffect(() => {
+    const id = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  const countdownStr = h > 0 ? `${h}h ${m}m ${s}s` : m > 0 ? `${m}m ${s}s` : `${s}s`;
+
+  // Pulsing ring animation
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)" }}
+      onClick={onDismiss}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          backgroundColor: "#111827",
+          border: `2px solid ${meta.color}`,
+          borderRadius: 24,
+          padding: "28px 28px 20px",
+          maxWidth: 360,
+          width: "90%",
+          boxShadow: `0 0 60px ${meta.color}44, 0 8px 40px #000a`,
+          animation: "alarmPop 0.3s cubic-bezier(.34,1.56,.64,1)",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        {/* Glow bg */}
+        <div style={{ position: "absolute", inset: 0, backgroundColor: meta.color, opacity: 0.06, borderRadius: 24, pointerEvents: "none" }} />
+
+        {/* Pulsing ring */}
+        <div style={{ position: "absolute", top: -40, right: -40, width: 120, height: 120, borderRadius: "50%", border: `2px solid ${meta.color}`, opacity: 0.2, animation: "alarmRing 1.5s ease-in-out infinite" }} />
+        <div style={{ position: "absolute", top: -60, right: -60, width: 160, height: 160, borderRadius: "50%", border: `1px solid ${meta.color}`, opacity: 0.1, animation: "alarmRing 1.5s ease-in-out infinite 0.3s" }} />
+
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16, position: "relative" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 40, lineHeight: 1 }}>{meta.icon}</span>
+            <div>
+              <p style={{ color: "#f97316", fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 2 }}>⏰ Alarm</p>
+              <p style={{ color: meta.color, fontWeight: 800, fontSize: 17, lineHeight: 1.2 }}>{alarm.condition}</p>
+            </div>
+          </div>
+          <button onClick={onDismiss} style={{ color: "#4b5563", background: "none", border: "none", cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "2px 6px", borderRadius: 8 }}>×</button>
+        </div>
+
+        {/* Countdown */}
+        <div style={{ backgroundColor: "#1f2937", borderRadius: 16, padding: "14px 20px", marginBottom: 16, textAlign: "center", position: "relative" }}>
+          <p style={{ color: "#6b7280", fontSize: 11, marginBottom: 4 }}>Startet in</p>
+          <p style={{ color: secs < 120 ? "#ef4444" : meta.color, fontSize: 32, fontWeight: 900, fontFamily: "monospace", letterSpacing: "0.05em", lineHeight: 1 }}>{countdownStr}</p>
+          {secs < 120 && <p style={{ color: "#ef4444", fontSize: 11, marginTop: 4, fontWeight: 600 }}>🚨 Gleich!</p>}
+        </div>
+
+        {/* Map + Time */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, position: "relative" }}>
+          <span style={{ backgroundColor: mapColor + "22", color: mapColor, border: `1px solid ${mapColor}55`, borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 600 }}>
+            📍 {alarm.map}
+          </span>
+          <span style={{ color: "#9ca3af", fontSize: 12, fontFamily: "monospace" }}>{alarm.timeRange}</span>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 8, position: "relative" }}>
+          <button
+            onClick={() => { if (soundEnabled) playAlarmSound("alert"); }}
+            style={{ flex: 1, padding: "10px", borderRadius: 12, border: "2px solid #374151", background: "#1f2937", color: "#d1d5db", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+          >
+            🔔 Sound
+          </button>
+          <button
+            onClick={onDismiss}
+            style={{ flex: 2, padding: "10px", borderRadius: 12, border: "none", background: meta.color, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+          >
+            ✓ Verstanden!
+          </button>
+        </div>
+
+        <style>{`
+          @keyframes alarmPop { from { opacity:0; transform: scale(0.85); } to { opacity:1; transform: scale(1); } }
+          @keyframes alarmRing { 0%,100% { transform: scale(1); opacity:0.2; } 50% { transform: scale(1.15); opacity:0.35; } }
+        `}</style>
+      </div>
+    </div>
+  );
+}
+
+function useAlarmTimer({ favs, liveData, notifSettings, soundEnabled, addToast }) {
+  const [alarm, setAlarm] = useState(null);
+  const firedRef = useRef(new Set());
+
+  useEffect(() => {
+    const check = () => {
+      if (!notifSettings.enabled && !notifSettings.alarmPopup) return; // respect settings
+      const threshold = (notifSettings.minutesBefore || 15) * 60; // seconds
+      const upcoming = liveData.upcoming;
+
+      for (const item of upcoming) {
+        const conditionOk = notifSettings.favsOnly ? favs.includes(item.condition) : true;
+        if (!conditionOk) continue;
+
+        const secsUntil = item.countdownH * 3600 + item.countdownM * 60;
+        const key = `${item.condition}|${item.date}|${item.timeRange}`;
+
+        if (secsUntil <= threshold && secsUntil > 0 && !firedRef.current.has(key)) {
+          firedRef.current.add(key);
+          setAlarm({ ...item, secsUntil });
+          if (soundEnabled) playAlarmSound("alert");
+          addToast(`⏰ Alarm: ${item.condition} startet in ${notifSettings.minutesBefore || 15} Min!`, "fav", 5000);
+          break; // show one at a time
+        }
+      }
+    };
+
+    check(); // immediate
+    const id = setInterval(check, 10000);
+    return () => clearInterval(id);
+  }, [favs, liveData, notifSettings, soundEnabled, addToast]);
+
+  const dismiss = useCallback(() => setAlarm(null), []);
+  return [alarm, dismiss];
+}
+
 // ── Condition-Verlauf ────────────────────────────────────────────────────────
 function HistoryView({ favs, toggleFav, onToast }) {
   const [dayFilter, setDayFilter] = useState("all");
@@ -2268,7 +2403,8 @@ export default function App() {
       if (next) playAlarmSound("fav");
       return next;
     });
-  const [activeTab, setActiveTab] = useState("main"); // "main" | "schedule"
+  const [activeTab, setActiveTab] = useState("main");
+  const [alarm, dismissAlarm] = useAlarmTimer({ favs, liveData, notifSettings, soundEnabled, addToast }); // "main" | "schedule"
   const [filter, setFilter] = useState("all");
   const [mapFilter, setMapFilter] = useState("all");
 
@@ -2330,6 +2466,7 @@ export default function App() {
 
   return (
     <div className={`min-h-screen ${bg} ${text} font-sans transition-colors duration-300`}>
+      {alarm && <AlarmPopup alarm={alarm} onDismiss={dismissAlarm} soundEnabled={soundEnabled} />}
       <LiveDataContext.Provider value={liveData}>
         <ToastContainer toasts={toasts} remove={removeToast} />
       {/* Header */}
@@ -2346,7 +2483,7 @@ export default function App() {
           </svg>
           <div>
             <div className="flex items-baseline gap-2">
-              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v2.2</span></h1>
+              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v2.3</span></h1>
               
               </div>
               <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">{t.tagline}</p>
@@ -2492,7 +2629,7 @@ export default function App() {
           {activeTab === "stats" && <StatsView />}
 
         {/* Footer */}
-        <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · ARC Twix v2.2 · {fetchStatus === "live" ? "Live-Daten" : "Fallback-Daten"}</p>
+        <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · ARC Twix v2.3 · {fetchStatus === "live" ? "Live-Daten" : "Fallback-Daten"}</p>
       </div>
     </LiveDataContext.Provider>
     </div>
