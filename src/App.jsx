@@ -1248,7 +1248,215 @@ function LoadoutView() {
   );
 }
 
-// ── Session-Planer ──────────────────────────────────────────────────────────
+// ── Sticky Countdown Banner ─────────────────────────────────────────────────────
+  function StickyCountdownBanner({ liveData, favs }) {
+    const upcoming = liveData?.upcoming || SCRAPED_DATA.upcoming;
+    const active   = liveData?.active   || SCRAPED_DATA.active;
+
+    // Bevorzuge Favoriten, sonst nächstes Upcoming
+    const next = (
+      upcoming.find(u => favs.includes(u.condition)) ||
+      upcoming[0]
+    );
+
+    // Aktive Favoriten
+    const activeFav = active.find(a => favs.includes(a.condition));
+
+    const [secs, setSecs] = useState(() =>
+      next ? next.countdownH * 3600 + next.countdownM * 60 : 0
+    );
+
+    useEffect(() => {
+      if (!next) return;
+      setSecs(next.countdownH * 3600 + next.countdownM * 60);
+      const id = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000);
+      return () => clearInterval(id);
+    }, [next?.condition, next?.timeRange]);
+
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    const countdownStr = `${h > 0 ? h + "h " : ""}${m}m ${String(s).padStart(2,"0")}s`;
+
+    if (!next && !activeFav) return null;
+
+    if (activeFav) {
+      const meta = getMeta(activeFav.condition);
+      return (
+        <div style={{ backgroundColor: meta.color + "18", borderBottom: `1.5px solid ${meta.color}44` }}
+          className="sticky top-[73px] z-20 px-4 py-1.5">
+          <div className="max-w-3xl mx-auto flex items-center gap-2 text-xs">
+            <span className="w-2 h-2 rounded-full animate-pulse inline-block" style={{ backgroundColor: meta.color }}></span>
+            <span style={{ color: meta.color }} className="font-bold">{meta.icon} {activeFav.condition}</span>
+            <span className="text-gray-500">ist jetzt aktiv auf</span>
+            <span className="text-gray-300 font-semibold">{activeFav.map}</span>
+            <span style={{ backgroundColor: meta.color + "22", color: meta.color }} className="ml-auto text-xs font-bold px-2 py-0.5 rounded-full">⭐ LIVE</span>
+          </div>
+        </div>
+      );
+    }
+
+    const meta = getMeta(next.condition);
+    return (
+      <div style={{ backgroundColor: "#1c1917", borderBottom: "1.5px solid #f9731633" }}
+        className="sticky top-[73px] z-20 px-4 py-1.5">
+        <div className="max-w-3xl mx-auto flex items-center gap-2 text-xs">
+          <span className="text-orange-400">⏳</span>
+          <span className="text-gray-400">{favs.length > 0 ? "Nächster Favorit:" : "Nächste Condition:"}</span>
+          <span style={{ color: meta.color }} className="font-bold">{meta.icon} {next.condition}</span>
+          <span className="text-gray-500">auf</span>
+          <span className="text-gray-300 font-semibold truncate">{next.map}</span>
+          <span className="ml-auto font-mono text-orange-400 font-bold shrink-0">in {countdownStr}</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Export / Import ────────────────────────────────────────────────────────
+  function useLoadouts() {
+    const [loadouts, setLoadouts] = useState(() => {
+      try { return JSON.parse(localStorage.getItem("arc_loadouts") || "{}"); }
+      catch { return {}; }
+    });
+    return loadouts;
+  }
+
+  function ExportImportView({ favs, onToast }) {
+    const loadouts = useLoadouts();
+    const [importText, setImportText] = useState("");
+    const [importError, setImportError] = useState("");
+    const [importSuccess, setImportSuccess] = useState(false);
+    const [copied, setCopied] = useState(false);
+
+    const buildExport = () => ({
+      version: "2.5",
+      exportedAt: new Date().toISOString(),
+      favorites: favs,
+      loadouts: loadouts,
+      notifSettings: (() => { try { return JSON.parse(localStorage.getItem("arc_notif") || "{}"); } catch { return {}; } })(),
+      lang: localStorage.getItem("arc_lang") || "de",
+      theme: localStorage.getItem("arc_theme") || "dark",
+    });
+
+    const handleExport = () => {
+      const data = JSON.stringify(buildExport(), null, 2);
+      const blob = new Blob([data], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `arc-twix-backup-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      if (onToast) onToast("✅ Export heruntergeladen!", "success", 3000);
+    };
+
+    const handleCopy = () => {
+      const data = JSON.stringify(buildExport(), null, 2);
+      navigator.clipboard.writeText(data).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+        if (onToast) onToast("📋 In Zwischenablage kopiert!", "success", 2500);
+      }).catch(() => {
+        if (onToast) onToast("Kopieren fehlgeschlagen", "warning", 3000);
+      });
+    };
+
+    const handleImport = () => {
+      setImportError("");
+      setImportSuccess(false);
+      try {
+        const parsed = JSON.parse(importText);
+        if (!parsed.version || !Array.isArray(parsed.favorites)) {
+          setImportError("Ungültiges Format — kein gültiges ARC Twix Backup.");
+          return;
+        }
+        // Favoriten
+        localStorage.setItem("arc_favs", JSON.stringify(parsed.favorites));
+        // Loadouts
+        if (parsed.loadouts && typeof parsed.loadouts === "object") {
+          localStorage.setItem("arc_loadouts", JSON.stringify(parsed.loadouts));
+        }
+        // Notif-Settings
+        if (parsed.notifSettings && typeof parsed.notifSettings === "object") {
+          localStorage.setItem("arc_notif", JSON.stringify(parsed.notifSettings));
+        }
+        // Lang & Theme
+        if (parsed.lang) localStorage.setItem("arc_lang", parsed.lang);
+        if (parsed.theme) localStorage.setItem("arc_theme", parsed.theme);
+        setImportSuccess(true);
+        setImportText("");
+        if (onToast) onToast("✅ Import erfolgreich! Seite neu laden um alle Änderungen zu sehen.", "success", 5000);
+      } catch (e) {
+        setImportError("JSON-Fehler: " + e.message);
+      }
+    };
+
+    const exportPreview = JSON.stringify(buildExport(), null, 2);
+
+    return (
+      <div className="flex flex-col gap-5">
+        <p className="text-gray-500 text-xs">Exportiere deine Favoriten, Loadouts und Einstellungen als JSON — und importiere sie auf einem anderen Gerät.</p>
+
+        {/* Export */}
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 flex flex-col gap-4">
+          <p className="text-white text-sm font-bold">📤 Export</p>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <span>⭐ {favs.length} Favoriten</span>
+              <span className="text-gray-700">·</span>
+              <span>🎒 {Object.keys(loadouts).length} Loadouts</span>
+            </div>
+            <pre className="bg-gray-950 rounded-xl p-3 text-xs text-gray-400 font-mono overflow-x-auto max-h-40 border border-gray-800">{exportPreview}</pre>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleExport}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white transition-colors">
+              ⬇️ Als Datei herunterladen
+            </button>
+            <button onClick={handleCopy}
+              className={`px-4 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${
+                copied ? "border-green-500 bg-green-500/10 text-green-400" : "border-gray-700 bg-gray-900 text-gray-300 hover:text-white"
+              }`}>
+              {copied ? "✅ Kopiert" : "📋 Kopieren"}
+            </button>
+          </div>
+        </div>
+
+        {/* Import */}
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 flex flex-col gap-4">
+          <p className="text-white text-sm font-bold">📥 Import</p>
+          <p className="text-gray-500 text-xs">JSON aus einer Datei oder Zwischenablage hier einfügen:</p>
+          <textarea
+            value={importText}
+            onChange={e => { setImportText(e.target.value); setImportError(""); setImportSuccess(false); }}
+            placeholder='{ "version": "2.4", "favorites": [...], ... }'
+            rows={6}
+            className="w-full bg-gray-950 border border-gray-700 text-white text-xs font-mono rounded-xl px-3 py-2.5 outline-none focus:border-orange-500 placeholder-gray-600 resize-none"
+          />
+          {importError && (
+            <div className="bg-red-950/40 border border-red-500/30 rounded-xl px-4 py-2">
+              <p className="text-red-400 text-xs">❌ {importError}</p>
+            </div>
+          )}
+          {importSuccess && (
+            <div className="bg-green-950/40 border border-green-500/30 rounded-xl px-4 py-2">
+              <p className="text-green-400 text-xs">✅ Import erfolgreich! Lade die Seite neu um alle Änderungen zu übernehmen.</p>
+            </div>
+          )}
+          <button
+            onClick={handleImport}
+            disabled={!importText.trim()}
+            className={`py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+              importText.trim() ? "bg-orange-500 hover:bg-orange-400 text-white" : "bg-gray-800 text-gray-600 cursor-not-allowed"
+            }`}>
+            📥 Importieren
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Session-Planer ──────────────────────────────────────────────────────────
 function SessionPlannerView({  favs, toggleFav, onToast }) {
   const [hours, setHours] = useState(2);
   const [startNow, setStartNow] = useState(true);
@@ -1608,7 +1816,7 @@ function DiscordView() {
           { name: "📍 Karte",   value: item?.map || "Spaceport",          inline: true },
           { name: "🕒 Uhrzeit", value: item?.timeRange || "11:00 – 12:00", inline: true },
         ],
-        footer: { text: "ARC Twix v2.4 · arcraiders.com" },
+        footer: { text: "ARC Twix v2.5 · arcraiders.com" },
         timestamp: new Date().toISOString(),
       }],
     };
@@ -2574,7 +2782,7 @@ export default function App() {
           </svg>
           <div>
             <div className="flex items-baseline gap-2">
-              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v2.4</span></h1>
+              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v2.5</span></h1>
               
               </div>
               <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">{t.tagline}</p>
@@ -2618,11 +2826,12 @@ export default function App() {
         </div>
       </div>
 
-      {/* Tab Bar */}
-      <div className="border-b border-gray-800 bg-gray-950 sticky top-[73px] z-10">
-        <div className="max-w-3xl mx-auto px-2 pt-2 flex flex-wrap gap-1 pb-0">
-          {[
-            { id: "main",     label: t.tabMain },
+      <StickyCountdownBanner liveData={liveData} favs={favs} />
+        {/* Tab Bar */}
+        <div className="border-b border-gray-800 bg-gray-950 sticky top-[73px] z-10">
+          <div className="max-w-3xl mx-auto px-2 pt-2 flex flex-wrap gap-1 pb-0">
+            {[
+              { id: "main",     label: t.tabMain },
             { id: "schedule", label: t.tabSchedule },
             { id: "history",  label: t.tabHistory },
             { id: "maps",     label: t.tabMaps },
@@ -2634,6 +2843,7 @@ export default function App() {
             { id: "notes",    label: t.tabNotes },
             { id: "week",     label: t.tabWeek },
               { id: "stats",    label: t.tabStats },
+              { id: "exportimport", label: "📦 Export/Import" },
           ].map(tab => (
             <button
               key={tab.id}
@@ -2776,9 +2986,10 @@ export default function App() {
         {activeTab === "notes" && <NotesView />}
         {activeTab === "week" && <WeekView favs={favs} toggleFav={toggleFav} onToast={addToast} />}
           {activeTab === "stats" && <StatsView />}
+          {activeTab === "exportimport" && <ExportImportView favs={favs} onToast={addToast} />}
 
         {/* Footer */}
-        <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · ARC Twix v2.4 · {fetchStatus === "live" ? "Live-Daten" : "Fallback-Daten"}</p>
+        <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · ARC Twix v2.5 · {fetchStatus === "live" ? "Live-Daten" : "Fallback-Daten"}</p>
       </div>
     </LiveDataContext.Provider>
     </div>
