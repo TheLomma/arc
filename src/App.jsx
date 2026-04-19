@@ -697,6 +697,705 @@ function LoadoutView() {
   );
 }
 
+// ── Session-Planer ──────────────────────────────────────────────────────────
+function SessionPlannerView({ favs, toggleFav }) {
+  const [hours, setHours] = useState(2);
+  const [startNow, setStartNow] = useState(true);
+  const [customStart, setCustomStart] = useState("");
+
+  // Build a flat timeline: active + upcoming, each with absolute start offset in minutes
+  const timeline = [
+    ...SCRAPED_DATA.active.map(a => ({ ...a, startMin: 0, endMin: 60 })),
+    ...SCRAPED_DATA.upcoming.map(u => ({
+      ...u,
+      startMin: u.countdownH * 60 + u.countdownM,
+      endMin:   u.countdownH * 60 + u.countdownM + 60,
+    })),
+  ];
+
+  // Parse custom start time (HH:MM) into offset from now in minutes
+  const getStartOffset = () => {
+    if (startNow) return 0;
+    if (!customStart) return 0;
+    const [h, m] = customStart.split(":").map(Number);
+    const now = new Date();
+    const start = new Date();
+    start.setHours(h, m, 0, 0);
+    let diff = (start - now) / 60000;
+    if (diff < 0) diff += 24 * 60;
+    return Math.round(diff);
+  };
+
+  const startOffset = getStartOffset();
+  const endOffset = startOffset + hours * 60;
+
+  const matchingConditions = timeline.filter(item =>
+    item.startMin < endOffset && item.endMin > startOffset
+  ).sort((a, b) => a.startMin - b.startMin);
+
+  // Deduplicate by condition+map
+  const seen = new Set();
+  const unique = matchingConditions.filter(item => {
+    const key = `${item.condition}|${item.map}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const sessionDurationLabel = `${hours}h`;
+
+  return (
+    <div className="flex flex-col gap-5">
+      <p className="text-gray-500 text-xs">Gib an wie lange du spielst — die App zeigt dir welche Conditions in deinem Zeitfenster aktiv sein werden.</p>
+
+      {/* Controls */}
+      <div className="bg-gray-900 rounded-2xl border border-gray-800 p-5 flex flex-col gap-4">
+        {/* Session-Dauer */}
+        <div>
+          <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-3">⏱️ Session-Dauer</p>
+          <div className="flex items-center gap-3">
+            <input type="range" min="1" max="8" step="1" value={hours}
+              onChange={e => setHours(Number(e.target.value))}
+              className="flex-1 accent-orange-500" />
+            <span className="text-orange-400 font-bold text-lg w-12 text-center">{sessionDurationLabel}</span>
+          </div>
+          <div className="flex justify-between text-gray-600 text-xs mt-1">
+            <span>1h</span><span>2h</span><span>3h</span><span>4h</span><span>5h</span><span>6h</span><span>7h</span><span>8h</span>
+          </div>
+        </div>
+
+        {/* Startzeit */}
+        <div>
+          <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-3">🕒 Startzeit</p>
+          <div className="flex gap-2">
+            <button onClick={() => setStartNow(true)}
+              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors border-2 ${
+                startNow ? "border-orange-500 bg-orange-500/10 text-orange-400" : "border-gray-700 bg-gray-800 text-gray-400 hover:text-white"
+              }`}>
+              Jetzt
+            </button>
+            <button onClick={() => setStartNow(false)}
+              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors border-2 ${
+                !startNow ? "border-orange-500 bg-orange-500/10 text-orange-400" : "border-gray-700 bg-gray-800 text-gray-400 hover:text-white"
+              }`}>
+              Uhrzeit wählen
+            </button>
+          </div>
+          {!startNow && (
+            <input type="time" value={customStart} onChange={e => setCustomStart(e.target.value)}
+              className="mt-2 w-full bg-gray-800 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-500" />
+          )}
+        </div>
+      </div>
+
+      {/* Results */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-orange-400 text-sm">🎮</span>
+          <h3 className="text-white font-bold text-sm">
+            {unique.length} Condition{unique.length !== 1 ? "s" : ""} in deiner {sessionDurationLabel}-Session
+          </h3>
+        </div>
+
+        {unique.length === 0 ? (
+          <div className="text-center py-8 text-gray-600">
+            <p className="text-3xl mb-2">😴</p>
+            <p className="text-sm">Keine Conditions in diesem Zeitfenster.</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {unique.map((item, i) => {
+              const meta = getMeta(item.condition);
+              const mapColor = MAP_COLORS[item.map] || "#6b7280";
+              const isActive = item.startMin === 0;
+              const startsIn = item.startMin - startOffset;
+              return (
+                <div key={i} style={{ borderColor: isActive ? meta.color + "88" : "transparent" }}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 ${
+                    isActive ? "bg-green-950/30" : "bg-gray-900"
+                  }`}>
+                  <StarButton condition={item.condition} favs={favs} toggle={toggleFav} />
+                  <span className="text-xl w-8 text-center">{meta.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <p style={{ color: meta.color }} className="font-semibold text-sm truncate">{item.condition}</p>
+                    <span style={{ color: mapColor }} className="text-xs">{item.map}</span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    {isActive ? (
+                      <span className="flex items-center gap-1 text-green-400 text-xs font-semibold">
+                        <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse inline-block"></span>
+                        Jetzt aktiv
+                      </span>
+                    ) : (
+                      <>
+                        <p className="text-white text-xs font-mono">{item.date} {item.timeRange}</p>
+                        <p className="text-gray-500 text-xs">in {Math.floor(startsIn / 60) > 0 ? `${Math.floor(startsIn / 60)}h ` : ""}{startsIn % 60}m</p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Highlight Favs */}
+        {favs.length > 0 && unique.some(u => favs.includes(u.condition)) && (
+          <div className="mt-4 bg-yellow-400/5 border border-yellow-400/20 rounded-xl px-4 py-3">
+            <p className="text-yellow-400 text-xs font-bold mb-1">⭐ Deine Favoriten in dieser Session:</p>
+            <p className="text-white text-sm">
+              {unique.filter(u => favs.includes(u.condition)).map(u => u.condition).join(" · ")}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Squad-Koordination ───────────────────────────────────────────────────────
+function SquadView() {
+  const [selectedCond, setSelectedCond] = useState("");
+  const [selectedMap, setSelectedMap]   = useState("");
+  const [selectedTime, setSelectedTime] = useState("");
+  const [note, setNote]                 = useState("");
+  const [copied, setCopied]             = useState(false);
+  const [customTime, setCustomTime]     = useState("");
+  const [useCustom, setUseCustom]       = useState(false);
+
+  // Pre-fill from upcoming conditions
+  const quickSlots = [
+    ...SCRAPED_DATA.active.map(a  => ({ ...a, label: `Jetzt aktiv` })),
+    ...SCRAPED_DATA.upcoming.slice(0, 6).map(u => ({ ...u, label: `in ${u.countdownH > 0 ? u.countdownH + "h " : ""}${u.countdownM}m` })),
+  ];
+
+  const applyQuick = (item) => {
+    setSelectedCond(item.condition);
+    setSelectedMap(item.map);
+    setSelectedTime(item.timeRange);
+    setUseCustom(false);
+  };
+
+  const timeDisplay = useCustom ? customTime : selectedTime;
+  const meta = selectedCond ? getMeta(selectedCond) : null;
+  const mapColor = selectedMap ? (MAP_COLORS[selectedMap] || "#6b7280") : "#6b7280";
+
+  const buildLink = () => {
+    const base = window.location.origin + window.location.pathname;
+    const params = new URLSearchParams();
+    if (selectedCond) params.set("cond", selectedCond);
+    if (selectedMap)  params.set("map",  selectedMap);
+    if (timeDisplay)  params.set("time", timeDisplay);
+    if (note.trim())  params.set("note", note.trim());
+    return `${base}?${params.toString()}`;
+  };
+
+  const buildText = () => {
+    const parts = [];
+    if (selectedCond) parts.push(`⚔️ Condition: ${selectedCond}`);
+    if (selectedMap)  parts.push(`📍 Map: ${selectedMap}`);
+    if (timeDisplay)  parts.push(`🕒 Zeit: ${timeDisplay}`);
+    if (note.trim())  parts.push(`💬 ${note.trim()}`);
+    parts.push(`🔗 ${buildLink()}`);
+    return parts.join("\n");
+  };
+
+  const handleCopy = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-5">
+      <p className="text-gray-500 text-xs">Erstelle einen Squad-Treffpunkt und teile ihn per Link oder Text mit deinem Team.</p>
+
+      {/* Quick-Pick aus echten Conditions */}
+      <div>
+        <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-2">⚡ Schnellauswahl aus Zeitplan</p>
+        <div className="flex flex-col gap-1.5">
+          {quickSlots.map((item, i) => {
+            const m = getMeta(item.condition);
+            const isSelected = selectedCond === item.condition && selectedMap === item.map && !useCustom;
+            return (
+              <button key={i} onClick={() => applyQuick(item)}
+                style={{ borderColor: isSelected ? m.color : "transparent" }}
+                className={`flex items-center gap-3 px-3 py-2 rounded-xl border-2 text-left transition-all ${
+                  isSelected ? "bg-gray-800" : "bg-gray-900 hover:bg-gray-800"
+                }`}>
+                <span className="text-lg">{m.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <span style={{ color: m.color }} className="text-sm font-semibold">{item.condition}</span>
+                  <span style={{ color: MAP_COLORS[item.map] || "#6b7280" }} className="text-xs ml-2">{item.map}</span>
+                </div>
+                <span className="text-gray-500 text-xs font-mono shrink-0">{item.timeRange}</span>
+                <span className="text-gray-600 text-xs shrink-0">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Manuelle Eingabe */}
+      <div className="bg-gray-900 rounded-2xl border border-gray-800 p-4 flex flex-col gap-3">
+        <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">✏️ Manuell anpassen</p>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-gray-600 text-xs mb-1 block">Condition</label>
+            <select value={selectedCond} onChange={e => setSelectedCond(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 outline-none focus:border-orange-500">
+              <option value="">-- wählen --</option>
+              {Object.keys(CONDITION_META).map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-gray-600 text-xs mb-1 block">Karte</label>
+            <select value={selectedMap} onChange={e => setSelectedMap(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 outline-none focus:border-orange-500">
+              <option value="">-- wählen --</option>
+              {Object.keys(MAP_COLORS).map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <label className="text-gray-600 text-xs mb-1 block">Uhrzeit</label>
+            <input type="time" value={customTime} onChange={e => { setCustomTime(e.target.value); setUseCustom(true); }}
+              className="w-full bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 outline-none focus:border-orange-500" />
+          </div>
+          <div className="flex-1">
+            <label className="text-gray-600 text-xs mb-1 block">Notiz (optional)</label>
+            <input value={note} onChange={e => setNote(e.target.value)} placeholder="z.B. Treffpunkt Turm…"
+              className="w-full bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 outline-none focus:border-orange-500 placeholder-gray-700" />
+          </div>
+        </div>
+      </div>
+
+      {/* Vorschau */}
+      {selectedCond && (
+        <div style={{ borderColor: meta?.color + "55" }} className="rounded-2xl border-2 bg-gray-900 overflow-hidden">
+          <div style={{ backgroundColor: meta?.color + "18" }} className="px-5 py-4 border-b border-gray-800">
+            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-2">📝 Squad-Nachricht Vorschau</p>
+            <div className="font-mono text-xs text-gray-300 whitespace-pre-line leading-relaxed">{buildText()}</div>
+          </div>
+          <div className="px-5 py-3 flex gap-2">
+            <button onClick={() => handleCopy(buildText())}
+              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                copied ? "bg-green-600 text-white" : "bg-orange-500 hover:bg-orange-400 text-white"
+              }`}>
+              {copied ? "✅ Kopiert!" : "📋 Text kopieren"}
+            </button>
+            <button onClick={() => handleCopy(buildLink())}
+              className="flex-1 py-2 rounded-lg text-sm font-semibold bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors">
+              🔗 Link kopieren
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!selectedCond && (
+        <div className="text-center py-6 text-gray-600">
+          <p className="text-3xl mb-2">👥</p>
+          <p className="text-sm">Condition auswählen um einen Squad-Link zu erstellen</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Discord Webhook ─────────────────────────────────────────────────────────
+function useDiscordSettings() {
+  const [settings, setSettings] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("arc_discord") || "{}"); }
+    catch { return {}; }
+  });
+  const save = (data) => {
+    setSettings(data);
+    localStorage.setItem("arc_discord", JSON.stringify(data));
+  };
+  return [settings, save];
+}
+
+function DiscordView() {
+  const [settings, saveSettings] = useDiscordSettings();
+  const [webhookUrl, setWebhookUrl] = useState(settings.webhookUrl || "");
+  const [watchedConds, setWatchedConds] = useState(settings.watchedConds || []);
+  const [minutesBefore, setMinutesBefore] = useState(settings.minutesBefore || 15);
+  const [saved, setSaved] = useState(false);
+  const [testStatus, setTestStatus] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const toggleCond = (cond) => {
+    setWatchedConds(prev =>
+      prev.includes(cond) ? prev.filter(c => c !== cond) : [...prev, cond]
+    );
+  };
+
+  const handleSave = () => {
+    saveSettings({ webhookUrl, watchedConds, minutesBefore });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const buildDiscordEmbed = (item, type = "test") => {
+    const meta = getMeta(item?.condition || "Hidden Bunker");
+    const mapColor = MAP_COLORS[item?.map || "Spaceport"] || "#6b7280";
+    const colorInt = parseInt((meta.color || "#f97316").replace("#", ""), 16);
+    return {
+      username: "ARC Twix",
+      avatar_url: "https://arcraiders.com/favicon.ico",
+      embeds: [{
+        title: `${meta.icon} ${type === "test" ? "[TEST] " : ""}${item?.condition || "Hidden Bunker"} startet bald!`,
+        description: type === "test"
+          ? "Dies ist eine Test-Nachricht von ARC Twix."
+          : `Die Condition startet in **${minutesBefore} Minuten**. Bereite dich vor!`,
+        color: colorInt,
+        fields: [
+          { name: "📍 Karte",   value: item?.map || "Spaceport",          inline: true },
+          { name: "🕒 Uhrzeit", value: item?.timeRange || "11:00 – 12:00", inline: true },
+        ],
+        footer: { text: "ARC Twix v1.4 · arcraiders.com" },
+        timestamp: new Date().toISOString(),
+      }],
+    };
+  };
+
+  const sendToDiscord = async (payload) => {
+    if (!webhookUrl.startsWith("https://discord.com/api/webhooks/")) {
+      setTestStatus("❌ Ungültige Webhook-URL");
+      return false;
+    }
+    try {
+      const res = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleTest = async () => {
+    setSending(true);
+    setTestStatus("");
+    const payload = buildDiscordEmbed(null, "test");
+    const ok = await sendToDiscord(payload);
+    setTestStatus(ok ? "✅ Test-Nachricht gesendet!" : "❌ Fehler — URL prüfen");
+    setSending(false);
+  };
+
+  const isValidUrl = webhookUrl.startsWith("https://discord.com/api/webhooks/");
+
+  return (
+    <div className="flex flex-col gap-5">
+      <p className="text-gray-500 text-xs">Verbinde ARC Twix mit deinem Discord-Server. Automatische Nachrichten wenn deine Conditions bald starten.</p>
+
+      {/* Setup-Anleitung */}
+      <div className="bg-indigo-950/40 border border-indigo-500/30 rounded-xl px-4 py-3">
+        <p className="text-indigo-400 text-xs font-bold mb-2">👋 Webhook einrichten</p>
+        <ol className="text-gray-400 text-xs space-y-1 list-decimal list-inside">
+          <li>Discord → Server-Einstellungen → Integrationen → Webhooks</li>
+          <li>"Neuer Webhook" → Kanal wählen → "Webhook-URL kopieren"</li>
+          <li>URL hier einfügen und speichern</li>
+        </ol>
+      </div>
+
+      {/* Webhook URL */}
+      <div className="flex flex-col gap-2">
+        <label className="text-gray-400 text-xs font-bold uppercase tracking-widest">🔗 Webhook URL</label>
+        <input
+          value={webhookUrl}
+          onChange={e => setWebhookUrl(e.target.value)}
+          placeholder="https://discord.com/api/webhooks/..."
+          className={`w-full bg-gray-900 border rounded-lg px-3 py-2 text-sm text-white outline-none placeholder-gray-600 transition-colors ${
+            webhookUrl && !isValidUrl ? "border-red-500" : webhookUrl && isValidUrl ? "border-green-500" : "border-gray-700 focus:border-orange-500"
+          }`}
+        />
+        {webhookUrl && !isValidUrl && (
+          <p className="text-red-400 text-xs">❌ URL muss mit https://discord.com/api/webhooks/ beginnen</p>
+        )}
+        {webhookUrl && isValidUrl && (
+          <p className="text-green-400 text-xs">✅ Gültige Webhook-URL</p>
+        )}
+      </div>
+
+      {/* Minuten vor Start */}
+      <div>
+        <label className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-3 block">⏰ Benachrichtigung vor Start</label>
+        <div className="flex items-center gap-3">
+          <input type="range" min="5" max="60" step="5" value={minutesBefore}
+            onChange={e => setMinutesBefore(Number(e.target.value))}
+            className="flex-1 accent-indigo-500" />
+          <span className="text-indigo-400 font-bold w-16 text-center">{minutesBefore} Min</span>
+        </div>
+        <div className="flex justify-between text-gray-600 text-xs mt-1">
+          <span>5 Min</span><span>30 Min</span><span>60 Min</span>
+        </div>
+      </div>
+
+      {/* Conditions auswählen */}
+      <div>
+        <label className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-2 block">⚡ Conditions überwachen</label>
+        <p className="text-gray-600 text-xs mb-2">Nur für ausgewählte Conditions wird eine Discord-Nachricht gesendet.</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {Object.keys(CONDITION_META).map(cond => {
+            const m = getMeta(cond);
+            const isWatched = watchedConds.includes(cond);
+            return (
+              <button key={cond} onClick={() => toggleCond(cond)}
+                style={{ borderColor: isWatched ? m.color : "transparent", backgroundColor: isWatched ? m.color + "18" : "" }}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl border-2 bg-gray-900 hover:bg-gray-800 transition-all text-left">
+                <span className="text-base">{m.icon}</span>
+                <span style={{ color: isWatched ? m.color : "#6b7280" }} className="text-xs font-semibold leading-tight">{cond}</span>
+                {isWatched && <span className="ml-auto text-xs">✓</span>}
+              </button>
+            );
+          })}
+        </div>
+        <button onClick={() => setWatchedConds(watchedConds.length === Object.keys(CONDITION_META).length ? [] : Object.keys(CONDITION_META))}
+          className="mt-2 text-xs text-gray-500 hover:text-gray-300 underline">
+          {watchedConds.length === Object.keys(CONDITION_META).length ? "Alle abwählen" : "Alle auswählen"}
+        </button>
+      </div>
+
+      {/* Aktions-Buttons */}
+      <div className="flex gap-2">
+        <button onClick={handleSave}
+          className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+            saved ? "bg-green-600 text-white" : "bg-indigo-600 hover:bg-indigo-500 text-white"
+          }`}>
+          {saved ? "✅ Gespeichert" : "💾 Einstellungen speichern"}
+        </button>
+        <button onClick={handleTest} disabled={!isValidUrl || sending}
+          className="flex-1 py-2.5 rounded-lg text-sm font-semibold bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+          {sending ? "⏳ Sende..." : "🧪 Test senden"}
+        </button>
+      </div>
+
+      {testStatus && (
+        <p className={`text-sm text-center font-semibold ${
+          testStatus.startsWith("✅") ? "text-green-400" : "text-red-400"
+        }`}>{testStatus}</p>
+      )}
+
+      {/* Status-Übersicht */}
+      {settings.webhookUrl && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <p className="text-gray-400 text-xs font-bold mb-2">📊 Aktuelle Konfiguration</p>
+          <div className="flex flex-col gap-1 text-xs">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Webhook</span>
+              <span className="text-green-400">✅ Verbunden</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Benachrichtigung</span>
+              <span className="text-white">{settings.minutesBefore || 15} Min vor Start</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Überwachte Conditions</span>
+              <span className="text-white">{(settings.watchedConds || []).length} ausgewählt</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Spieler-Notizen ────────────────────────────────────────────────────────
+const NOTE_TAGS = ["Allgemein", "Strategie", "Loot", "Bug", "Squad", "Map"];
+
+function useNotes() {
+  const [notes, setNotes] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("arc_notes") || "[]"); }
+    catch { return []; }
+  });
+  const add = (note) => {
+    const next = [{ ...note, id: Date.now(), createdAt: new Date().toLocaleString("de-DE") }, ...notes];
+    setNotes(next);
+    localStorage.setItem("arc_notes", JSON.stringify(next));
+  };
+  const remove = (id) => {
+    const next = notes.filter(n => n.id !== id);
+    setNotes(next);
+    localStorage.setItem("arc_notes", JSON.stringify(next));
+  };
+  const update = (id, text) => {
+    const next = notes.map(n => n.id === id ? { ...n, text, updatedAt: new Date().toLocaleString("de-DE") } : n);
+    setNotes(next);
+    localStorage.setItem("arc_notes", JSON.stringify(next));
+  };
+  return [notes, add, remove, update];
+}
+
+function NotesView() {
+  const [notes, addNote, removeNote, updateNote] = useNotes();
+  const [text, setText] = useState("");
+  const [tag, setTag] = useState("Allgemein");
+  const [linkedCond, setLinkedCond] = useState("");
+  const [linkedMap, setLinkedMap] = useState("");
+  const [filterTag, setFilterTag] = useState("all");
+  const [editId, setEditId] = useState(null);
+  const [editText, setEditText] = useState("");
+  const [search, setSearch] = useState("");
+
+  const handleAdd = () => {
+    if (!text.trim()) return;
+    addNote({ text: text.trim(), tag, condition: linkedCond, map: linkedMap });
+    setText("");
+    setLinkedCond("");
+    setLinkedMap("");
+  };
+
+  const handleEdit = (note) => {
+    setEditId(note.id);
+    setEditText(note.text);
+  };
+
+  const handleEditSave = (id) => {
+    updateNote(id, editText);
+    setEditId(null);
+  };
+
+  const TAG_COLORS = {
+    "Allgemein": "#6b7280",
+    "Strategie": "#f97316",
+    "Loot":      "#22c55e",
+    "Bug":       "#ef4444",
+    "Squad":     "#8b5cf6",
+    "Map":       "#3b82f6",
+  };
+
+  const filtered = notes.filter(n =>
+    (filterTag === "all" || n.tag === filterTag) &&
+    (search === "" || n.text.toLowerCase().includes(search.toLowerCase()) ||
+      (n.condition || "").toLowerCase().includes(search.toLowerCase()))
+  );
+
+  return (
+    <div className="flex flex-col gap-5">
+      <p className="text-gray-500 text-xs">Private Notizen zu Maps, Conditions und Strategien. Alles lokal gespeichert.</p>
+
+      {/* Neue Notiz */}
+      <div className="bg-gray-900 rounded-2xl border border-gray-800 p-4 flex flex-col gap-3">
+        <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">✏️ Neue Notiz</p>
+        <textarea
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder="Notiz eingeben… (z.B. 'Bei Matriarch immer links flanken')"
+          rows={3}
+          className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 outline-none focus:border-orange-500 placeholder-gray-600 resize-none"
+        />
+        <div className="grid grid-cols-2 gap-2">
+          {/* Tag */}
+          <div>
+            <label className="text-gray-600 text-xs mb-1 block">Kategorie</label>
+            <select value={tag} onChange={e => setTag(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 outline-none focus:border-orange-500">
+              {NOTE_TAGS.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          {/* Condition */}
+          <div>
+            <label className="text-gray-600 text-xs mb-1 block">Condition (optional)</label>
+            <select value={linkedCond} onChange={e => setLinkedCond(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 outline-none focus:border-orange-500">
+              <option value="">— keine —</option>
+              {Object.keys(CONDITION_META).map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          {/* Map */}
+          <div>
+            <label className="text-gray-600 text-xs mb-1 block">Karte (optional)</label>
+            <select value={linkedMap} onChange={e => setLinkedMap(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 outline-none focus:border-orange-500">
+              <option value="">— keine —</option>
+              {Object.keys(MAP_COLORS).map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <div className="flex items-end">
+            <button onClick={handleAdd} disabled={!text.trim()}
+              className="w-full py-2 rounded-lg text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              + Hinzufügen
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter & Suche */}
+      {notes.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Notizen durchsuchen…"
+            className="flex-1 min-w-0 bg-gray-900 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 outline-none focus:border-orange-500 placeholder-gray-600" />
+          <select value={filterTag} onChange={e => setFilterTag(e.target.value)}
+            className="bg-gray-900 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 outline-none focus:border-orange-500">
+            <option value="all">Alle Kategorien</option>
+            {NOTE_TAGS.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+      )}
+
+      {/* Notizen-Liste */}
+      {filtered.length === 0 && (
+        <div className="text-center py-8 text-gray-600">
+          <p className="text-3xl mb-2">📝</p>
+          <p className="text-sm">{notes.length === 0 ? "Noch keine Notizen. Erste Notiz oben erstellen!" : "Keine Notizen für diesen Filter."}</p>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2">
+        {filtered.map(note => {
+          const tagColor = TAG_COLORS[note.tag] || "#6b7280";
+          const condMeta = note.condition ? getMeta(note.condition) : null;
+          const mapColor = note.map ? (MAP_COLORS[note.map] || "#6b7280") : null;
+          const isEditing = editId === note.id;
+          return (
+            <div key={note.id} className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 flex flex-col gap-2">
+              <div className="flex items-start gap-2">
+                {/* Tags */}
+                <div className="flex flex-wrap gap-1 flex-1">
+                  <span style={{ backgroundColor: tagColor + "22", color: tagColor, borderColor: tagColor + "44" }}
+                    className="text-xs font-semibold px-2 py-0.5 rounded-full border">{note.tag}</span>
+                  {condMeta && (
+                    <span style={{ backgroundColor: condMeta.color + "18", color: condMeta.color }}
+                      className="text-xs px-2 py-0.5 rounded-full">{condMeta.icon} {note.condition}</span>
+                  )}
+                  {mapColor && (
+                    <span style={{ color: mapColor }} className="text-xs px-2 py-0.5">📍 {note.map}</span>
+                  )}
+                </div>
+                {/* Actions */}
+                <div className="flex gap-1 shrink-0">
+                  <button onClick={() => isEditing ? handleEditSave(note.id) : handleEdit(note)}
+                    className="text-xs text-gray-500 hover:text-orange-400 px-1.5 py-0.5 rounded transition-colors">
+                    {isEditing ? "✅" : "✏️"}
+                  </button>
+                  <button onClick={() => removeNote(note.id)}
+                    className="text-xs text-gray-600 hover:text-red-400 px-1.5 py-0.5 rounded transition-colors">
+                    🗑️
+                  </button>
+                </div>
+              </div>
+              {isEditing ? (
+                <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={2} autoFocus
+                  className="w-full bg-gray-800 border border-orange-500 text-white text-sm rounded-lg px-3 py-2 outline-none resize-none" />
+              ) : (
+                <p className="text-gray-300 text-sm leading-relaxed">{note.text}</p>
+              )}
+              <p className="text-gray-700 text-xs">
+                {note.updatedAt ? `Bearbeitet: ${note.updatedAt}` : `Erstellt: ${note.createdAt}`}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Condition-Verlauf ────────────────────────────────────────────────────────
 function HistoryView({ favs, toggleFav }) {
   const [dayFilter, setDayFilter] = useState("all");
@@ -909,7 +1608,7 @@ export default function App() {
           <div>
             <div className="flex items-baseline gap-2">
               <h1 className="font-bold text-lg text-white leading-none">ARC Twix</h1>
-              <span className="text-gray-600 text-xs font-mono">v1.2</span>
+              <span className="text-gray-600 text-xs font-mono">v1.4</span>
             </div>
             <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">Map Conditions</p>
           </div>
@@ -940,6 +1639,10 @@ export default function App() {
             { id: "maps",     label: "🗺️ Karten" },
             { id: "loot",     label: "🎁 Loot-Guide" },
             { id: "loadout",  label: "🎒 Loadout" },
+            { id: "session",  label: "⏱️ Session" },
+            { id: "squad",    label: "👥 Squad" },
+            { id: "discord",  label: "🤖 Discord" },
+            { id: "notes",    label: "📝 Notizen" },
           ].map(tab => (
             <button
               key={tab.id}
@@ -1019,6 +1722,10 @@ export default function App() {
         {activeTab === "maps" && <MapsView favs={favs} toggleFav={toggleFav} />}
         {activeTab === "loot" && <LootGuideView />}
         {activeTab === "loadout" && <LoadoutView />}
+        {activeTab === "session" && <SessionPlannerView favs={favs} toggleFav={toggleFav} />}
+        {activeTab === "squad" && <SquadView />}
+        {activeTab === "discord" && <DiscordView />}
+        {activeTab === "notes" && <NotesView />}
 
         {/* Footer */}
         <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · Rheinische Post Mediengruppe Tracker</p>
