@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useContext, createContext } from "react";
+import React, { useState, useEffect, useCallback, useContext, createContext, useRef } from "react";
 
 const CONDITION_META = {
   "Close Scrutiny":       { icon: "🔍", color: "#f97316", desc: "Erhöhte Feindaktivität" },
@@ -1689,7 +1689,7 @@ function DiscordView() {
           { name: "📍 Karte",   value: item?.map || "Spaceport",          inline: true },
           { name: "🕒 Uhrzeit", value: item?.timeRange || "11:00 – 12:00", inline: true },
         ],
-        footer: { text: "ARC Twix v2.6 · arcraiders.com" },
+        footer: { text: "ARC Twix v2.7 · arcraiders.com" },
         timestamp: new Date().toISOString(),
       }],
     };
@@ -2175,7 +2175,94 @@ function StatsView() {
 // Zeigt ein Popup-Modal wenn eine Favoriten-Condition in X Minuten startet.
 // Nutzt notifSettings.minutesBefore als Schwellwert.
 
-function AlarmPopup({ alarm, onDismiss, soundEnabled }) {
+// ── Export / Import View ──────────────────────────────────────────────────
+  function ExportImportView({ favs, onToast }) {
+    const [importText, setImportText] = useState("");
+    const [importStatus, setImportStatus] = useState("");
+    const buildExport = () => {
+      const data = {
+        favs:     JSON.parse(localStorage.getItem("arc_favs")      || "[]"),
+        loadouts: JSON.parse(localStorage.getItem("arc_loadouts")  || "{}"),
+        notes:    JSON.parse(localStorage.getItem("arc_notes")     || "[]"),
+        notif:    JSON.parse(localStorage.getItem("arc_notif")     || "{}"),
+        discord:  JSON.parse(localStorage.getItem("arc_discord")   || "{}"),
+        lang:  localStorage.getItem("arc_lang")  || "de",
+        theme: localStorage.getItem("arc_theme") || "dark",
+        exportedAt: new Date().toISOString(),
+      };
+      return JSON.stringify(data, null, 2);
+    };
+    const handleExport = () => {
+      navigator.clipboard.writeText(buildExport()).then(() => {
+        if (onToast) onToast("📋 In Zwischenablage kopiert!", "success", 3000);
+      });
+    };
+    const handleDownload = () => {
+      const blob = new Blob([buildExport()], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `arc-twix-backup-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      if (onToast) onToast("💾 Backup heruntergeladen!", "success", 3000);
+    };
+    const handleImport = () => {
+      try {
+        const data = JSON.parse(importText);
+        if (data.favs)     localStorage.setItem("arc_favs",     JSON.stringify(data.favs));
+        if (data.loadouts) localStorage.setItem("arc_loadouts", JSON.stringify(data.loadouts));
+        if (data.notes)    localStorage.setItem("arc_notes",    JSON.stringify(data.notes));
+        if (data.notif)    localStorage.setItem("arc_notif",    JSON.stringify(data.notif));
+        if (data.discord)  localStorage.setItem("arc_discord",  JSON.stringify(data.discord));
+        if (data.lang)     localStorage.setItem("arc_lang",     data.lang);
+        if (data.theme)    localStorage.setItem("arc_theme",    data.theme);
+        setImportStatus("success");
+        if (onToast) onToast("✅ Import erfolgreich! Seite neu laden.", "success", 5000);
+        setTimeout(() => { setImportStatus(""); setImportText(""); }, 3000);
+      } catch {
+        setImportStatus("error");
+        if (onToast) onToast("❌ Ungültiges JSON.", "warning", 4000);
+        setTimeout(() => setImportStatus(""), 3000);
+      }
+    };
+    return (
+      <div className="flex flex-col gap-5">
+        <p className="text-gray-500 text-xs">Exportiere all deine Einstellungen, Favoriten, Loadouts und Notizen als JSON — oder importiere ein Backup.</p>
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 flex flex-col gap-3">
+          <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">📤 Exportieren</p>
+          <div className="flex gap-2">
+            <button onClick={handleExport} className="flex-1 py-2.5 rounded-lg text-sm font-semibold bg-orange-500 hover:bg-orange-400 text-white transition-colors">📋 In Zwischenablage</button>
+            <button onClick={handleDownload} className="flex-1 py-2.5 rounded-lg text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white transition-colors">💾 Als Datei</button>
+          </div>
+        </div>
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 flex flex-col gap-3">
+          <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">📥 Importieren</p>
+          <textarea value={importText} onChange={e => setImportText(e.target.value)}
+            placeholder='{"favs":[...]}' rows={5}
+            className="w-full bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-3 py-2 outline-none focus:border-orange-500 placeholder-gray-600 resize-none font-mono" />
+          <button onClick={handleImport} disabled={!importText.trim()}
+            className={`py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+              importStatus === "success" ? "bg-green-600 text-white" :
+              importStatus === "error"   ? "bg-red-600 text-white" :
+              "bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            }`}>
+            {importStatus === "success" ? "✅ Importiert!" : importStatus === "error" ? "❌ Fehler" : "📥 Importieren"}
+          </button>
+        </div>
+        <div className="bg-red-950/30 border border-red-500/20 rounded-2xl p-5 flex flex-col gap-3">
+          <p className="text-red-400 text-xs font-bold uppercase tracking-widest">⚠️ Alle Daten löschen</p>
+          <p className="text-gray-500 text-xs">Löscht alle lokalen Daten. Nicht rückgängig machbar!</p>
+          <button onClick={() => { if (window.confirm("Wirklich alle Daten löschen?")) { ["arc_favs","arc_loadouts","arc_notes","arc_notif","arc_discord","arc_lang","arc_theme","arc_sound"].forEach(k => localStorage.removeItem(k)); if (onToast) onToast("🗑️ Gelöscht. Seite wird neu geladen.", "warning", 3000); setTimeout(() => window.location.reload(), 2000); } }}
+            className="py-2.5 rounded-lg text-sm font-semibold bg-red-600 hover:bg-red-500 text-white transition-colors">
+            🗑️ Alle Daten löschen
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function AlarmPopup({ alarm, onDismiss, soundEnabled }) {
   const meta = getMeta(alarm.condition);
   const mapColor = MAP_COLORS[alarm.map] || "#6b7280";
   const [secs, setSecs] = useState(alarm.secsUntil);
@@ -2549,16 +2636,15 @@ function useTheme() {
 }
 
 export default function App() {
-  const { installPrompt, installed: pwaInstalled, triggerInstall } = usePWA();
-  const [lang, toggleLang, t] = useLang();
+    const { installPrompt, installed: pwaInstalled, triggerInstall } = usePWA();
+    const [lang, toggleLang, t] = useLang();
     const [toasts, addToast, removeToast] = useToast();
-  _globalT = t;
-  const [dark, toggleTheme] = useTheme();
-  const [favs, toggleFav] = useFavorites();
-  const [notifSettings, updateNotif] = useNotifSettings();
-    const { liveData, fetchStatus, lastFetch, refetch } = useLiveData(addToast);
-  const notifiedRef = useRef(new Set());
-  const [lastRefresh, setLastRefresh] = useState(new Date());
+    const [dark, toggleTheme] = useTheme();
+    const [favs, toggleFav] = useFavorites();
+    const [notifSettings, updateNotif] = useNotifSettings();
+    const { liveData, fetchStatus, lastFetch } = useLiveData(addToast);
+    const notifiedRef = useRef(new Set());
+    const [lastRefresh, setLastRefresh] = useState(new Date());
     const [soundEnabled, setSoundEnabled] = useState(() => {
       try { return localStorage.getItem("arc_sound") !== "off"; } catch { return true; }
     });
@@ -2568,305 +2654,252 @@ export default function App() {
       if (next) playAlarmSound("fav");
       return next;
     });
-  const [activeTab, setActiveTab] = useState("main");
-  const [alarm, dismissAlarm] = useAlarmTimer({ favs, liveData, notifSettings, soundEnabled, addToast }); // "main" | "schedule"
-  const [filter, setFilter] = useState("all");
-  const [mapFilter, setMapFilter] = useState("all");
+    const [activeTab, setActiveTab] = useState("main");
+    const [alarm, dismissAlarm] = useAlarmTimer({ favs, liveData, notifSettings, soundEnabled, addToast });
+    const [filter, setFilter] = useState("all");
+    const [mapFilter, setMapFilter] = useState("all");
+    const [searchQuery, setSearchQuery] = useState("");
 
-  const refresh = useCallback(() => {
+    const refresh = useCallback(() => {
       setLastRefresh(new Date());
       addToast("Daten aktualisiert 🔄", "success", 2500);
     }, [addToast]);
 
-  // ── Notification watcher: fires 15 min before a fav condition starts ────────
-  useEffect(() => {
-    requestNotifPermission();
-    const check = setInterval(() => {
-      const allUpcoming = liveData.upcoming;
-      allUpcoming.forEach(item => {
-        if (!favs.includes(item.condition)) return;
-        const key = `${item.condition}|${item.date}|${item.timeRange}`;
-        if (notifiedRef.current.has(key)) return;
-        const totalSecs = item.countdownH * 3600 + item.countdownM * 60;
-        // fire when ≤ 15 min remaining
-        if (totalSecs <= 15 * 60 && totalSecs > 0) {
-          sendNotification(
-            `⭐ ${item.condition} startet bald!`,
-            `📍 ${item.map} · ${item.date} ${item.timeRange}`
-          );
-          const m = getMeta(item.condition);
-            addToast(`${m.icon} ${item.condition} startet in <15 Min! 📍 ${item.map}`, "fav", 7000);
+    // Notification watcher: fires before fav conditions start
+    useEffect(() => {
+      requestNotifPermission();
+      const check = setInterval(() => {
+        liveData.upcoming.forEach(item => {
+          if (!favs.includes(item.condition)) return;
+          const key = `${item.condition}|${item.date}|${item.timeRange}`;
+          if (notifiedRef.current.has(key)) return;
+          const totalSecs = item.countdownH * 3600 + item.countdownM * 60;
+          if (totalSecs <= notifSettings.minutesBefore * 60 && totalSecs > 0) {
+            sendNotification(
+              `⭐ ${item.condition} startet bald!`,
+              `📍 ${item.map} · ${item.date} ${item.timeRange}`
+            );
+            const m = getMeta(item.condition);
+            addToast(`${m.icon} ${item.condition} startet in <${notifSettings.minutesBefore} Min! 📍 ${item.map}`, "fav", 7000);
             if (soundEnabled) playAlarmSound("alert");
             notifiedRef.current.add(key);
-        }
-      });
-    }, 30000); // check every 30 s
-    return () => clearInterval(check);
-  }, [favs]);
+          }
+        });
+      }, 30000);
+      return () => clearInterval(check);
+    }, [favs, liveData, notifSettings, soundEnabled, addToast]);
 
-  useEffect(() => {
-    const interval = setInterval(refresh, 60000);
-    return () => clearInterval(interval);
-  }, [refresh]);
+    useEffect(() => {
+      const interval = setInterval(refresh, 60000);
+      return () => clearInterval(interval);
+    }, [refresh]);
 
-  const TAB_IDS = ["main","schedule","history","maps","loot","loadout","session","squad","discord","notes","week","stats","exportimport"];
-    const { onTouchStart, onTouchEnd } = useSwipeNav(TAB_IDS, activeTab, setActiveTab);
     const maps = ["all", ...Object.keys(MAP_COLORS)];
-  const conditions = ["all", ...Object.keys(CONDITION_META)];
-
-  const [searchQuery, setSearchQuery] = useState("");
+    const conditions = ["all", ...Object.keys(CONDITION_META)];
     const searchLower = searchQuery.toLowerCase();
-    const matchesSearch = (i) =>
-      !searchQuery ||
-      i.condition.toLowerCase().includes(searchLower) ||
-      i.map.toLowerCase().includes(searchLower);
 
     const filteredActive = liveData.active.filter(i =>
-    (mapFilter === "all" || i.map === mapFilter) &&
-    (filter === "all" || i.condition === filter)
-  );
+      (mapFilter === "all" || i.map === mapFilter) &&
+      (filter === "all" || i.condition === filter) &&
+      (!searchQuery || i.condition.toLowerCase().includes(searchLower) || i.map.toLowerCase().includes(searchLower))
+    );
+    const filteredUpcoming = liveData.upcoming.filter(i =>
+      (mapFilter === "all" || i.map === mapFilter) &&
+      (filter === "all" || i.condition === filter) &&
+      (!searchQuery || i.condition.toLowerCase().includes(searchLower) || i.map.toLowerCase().includes(searchLower))
+    );
 
-  const filteredUpcoming = liveData.upcoming.filter(i =>
-    (mapFilter === "all" || i.map === mapFilter) &&
-    (filter === "all" || i.condition === filter)
-  );
+    const bg   = dark ? "bg-gray-950" : "bg-gray-100";
+    const text = dark ? "text-white"  : "text-gray-900";
 
-  // Apply theme classes to root
-  const bg      = dark ? "bg-gray-950"  : "bg-gray-100";
-  const surface = dark ? "bg-gray-900"  : "bg-white";
-  const border  = dark ? "border-gray-800" : "border-gray-200";
-  const text    = dark ? "text-white"   : "text-gray-900";
-  const subtext = dark ? "text-gray-400" : "text-gray-500";
+    return (
+      <LiveDataContext.Provider value={liveData}>
+        <div className={`min-h-screen ${bg} ${text} font-sans transition-colors duration-300`}>
+          {alarm && <AlarmPopup alarm={alarm} onDismiss={dismissAlarm} soundEnabled={soundEnabled} />}
+          <ToastContainer toasts={toasts} remove={removeToast} />
 
-  return (
-    <div className={`min-h-screen ${bg} ${text} font-sans transition-colors duration-300`}>
-      {alarm && <AlarmPopup alarm={alarm} onDismiss={dismissAlarm} soundEnabled={soundEnabled} />}
-      <ToastContainer toasts={toasts} remove={removeToast} />
-        <LiveDataContext.Provider value={liveData}>
-        {/* Header */}
-      <div className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          {/* ARC Twix Logo */}
-          <svg width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="38" height="38" rx="9" fill="#111827"/>
-            <polygon points="19,4 34,30 4,30" fill="none" stroke="#f97316" strokeWidth="2.2" strokeLinejoin="round"/>
-            <polygon points="19,10 29,28 9,28" fill="#f97316" fillOpacity="0.13"/>
-            <line x1="19" y1="4" x2="19" y2="30" stroke="#facc15" strokeWidth="1.2" strokeDasharray="2,2"/>
-            <circle cx="19" cy="19" r="3.2" fill="#facc15" fillOpacity="0.9"/>
-            <circle cx="19" cy="19" r="5.5" fill="none" stroke="#facc15" strokeWidth="0.8" strokeOpacity="0.4"/>
-          </svg>
-          <div>
-            <div className="flex items-baseline gap-2">
-              <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v2.6</span></h1>
-              
+          {/* Header */}
+          <div className="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+            <div className="flex items-center gap-3">
+              <svg width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="38" height="38" rx="9" fill="#111827"/>
+                <polygon points="19,4 34,30 4,30" fill="none" stroke="#f97316" strokeWidth="2.2" strokeLinejoin="round"/>
+                <polygon points="19,10 29,28 9,28" fill="#f97316" fillOpacity="0.13"/>
+                <line x1="19" y1="4" x2="19" y2="30" stroke="#facc15" strokeWidth="1.2" strokeDasharray="2,2"/>
+                <circle cx="19" cy="19" r="3.2" fill="#facc15" fillOpacity="0.9"/>
+                <circle cx="19" cy="19" r="5.5" fill="none" stroke="#facc15" strokeWidth="0.8" strokeOpacity="0.4"/>
+              </svg>
+              <div>
+                <div className="flex items-baseline gap-2">
+                  <h1 className="font-bold text-lg text-white leading-none">ARC Twix <span className="text-orange-400 text-xs font-semibold">v2.7</span></h1>
+                </div>
+                <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">{t.tagline}</p>
               </div>
-              <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">{t.tagline}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {favs.length > 0 && (
-            <span className="bg-yellow-400/10 text-yellow-400 text-xs px-2 py-1 rounded-full border border-yellow-400/30">
-              ⭐ {favs.length} {favs.length > 1 ? t.favoritesPlural : t.favorites}
-            </span>
-          )}
-          <PWAInstallButton installPrompt={installPrompt} installed={pwaInstalled} triggerInstall={triggerInstall} />
-            <LiveStatusBadge fetchStatus={fetchStatus} lastFetch={lastFetch} />
-            <span className="text-gray-500 text-xs">Aktualisiert: {lastRefresh.toLocaleTimeString("de-DE")}</span>
-          <button
-            onClick={refresh}
-            className="bg-orange-500 hover:bg-orange-400 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
-            >
-              🔄 Refresh
-            </button>
-            <button
-              onClick={toggleLang}
-                title="Sprache wechseln"
-                className="text-xs font-semibold px-3 py-1.5 rounded-lg border-2 border-gray-700 bg-gray-900 text-gray-300 hover:text-white hover:border-gray-500 transition-all"
-              >{lang === "de" ? "🇩🇪 DE" : "🇬🇧 EN"}</button>
-              <button
-                onClick={toggleSound}
-              title={soundEnabled ? "Sound deaktivieren" : "Sound aktivieren"}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-lg border-2 transition-all ${
-                soundEnabled
-                  ? "border-orange-500 bg-orange-500/10 text-orange-400"
-                  : "border-gray-700 bg-gray-900 text-gray-500 hover:text-gray-300"
-              }`}
-            >{soundEnabled ? "🔔 Sound AN" : "🔇 Sound AUS"}</button>
-              <button
-                onClick={toggleTheme}
-                title={dark ? "Light Mode" : "Dark Mode"}
-                className="text-xs font-semibold px-3 py-1.5 rounded-lg border-2 border-gray-700 bg-gray-900 text-gray-300 hover:text-white hover:border-gray-500 transition-all"
-              >{dark ? "☀️ Light" : "🌙 Dark"}</button>
-            
-        </div>
-      </div>
-
-      <StickyCountdownBanner liveData={liveData} favs={favs} />
-        {/* Tab Bar */}
-        <div className="border-b border-gray-800 bg-gray-950 sticky top-[73px] z-10">
-          <div className="max-w-3xl mx-auto px-2 pt-2 flex flex-wrap gap-1 pb-0">
-            {[
-              { id: "main",     label: t.tabMain },
-            { id: "schedule", label: t.tabSchedule },
-            { id: "history",  label: t.tabHistory },
-            { id: "maps",     label: t.tabMaps },
-            { id: "loot",     label: t.tabLoot },
-            { id: "loadout",  label: t.tabLoadout },
-            { id: "session",  label: t.tabSession },
-            { id: "squad",    label: t.tabSquad },
-            { id: "discord",  label: t.tabDiscord },
-            { id: "notes",    label: t.tabNotes },
-            { id: "week",     label: t.tabWeek },
-              { id: "stats",    label: t.tabStats },
-              { id: "exportimport", label: "📦 Export/Import" },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${
-                activeTab === tab.id
-                  ? "border-orange-500 text-orange-400 bg-gray-900"
-                  : "border-transparent text-gray-500 hover:text-gray-300"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="max-w-3xl mx-auto px-4 py-6 flex flex-col gap-6" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-
-        {/* Main Tab content */}
-        {/* 🔍 Suchleiste */}
-          {activeTab === "main" && (
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none">🔍</span>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Condition oder Karte suchen…"
-                className="w-full bg-gray-900 border border-gray-700 text-white text-sm rounded-xl pl-9 pr-9 py-2.5 outline-none focus:border-orange-500 placeholder-gray-600 transition-colors"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-lg leading-none"
-                >×</button>
+            </div>
+            <div className="flex items-center gap-3">
+              {favs.length > 0 && (
+                <span className="bg-yellow-400/10 text-yellow-400 text-xs px-2 py-1 rounded-full border border-yellow-400/30">
+                  ⭐ {favs.length} {favs.length > 1 ? t.favoritesPlural : t.favorites}
+                </span>
               )}
-            </div>
-          )}
-
-          {/* ⚡ Map-Filter Toggle-Buttons */}
-        <div className="flex flex-col gap-3">
-          {/* Map-Filter */}
-          <div>
-            <p className="text-gray-600 text-xs font-bold uppercase tracking-widest mb-2">🗺️ Karte</p>
-            <div className="flex flex-wrap gap-1.5">
-              {maps.map(m => {
-                const col = MAP_COLORS[m];
-                const isAll = m === "all";
-                const active = mapFilter === m;
-                return (
-                  <button
-                    key={m}
-                    onClick={() => setMapFilter(m)}
-                    style={active && !isAll ? { borderColor: col, backgroundColor: col + "22", color: col } : {}}
-                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-all whitespace-nowrap ${
-                      active
-                        ? isAll ? "border-orange-500 bg-orange-500/15 text-orange-400" : ""
-                        : "border-gray-700 bg-gray-900 text-gray-500 hover:text-gray-300 hover:border-gray-500"
-                    }`}
-                  >
-                    {isAll ? "🗺️ Alle" : `${MAP_INFO[m]?.icon || "📍"} ${m}`}
-                  </button>
-                );
-              })}
+              <PWAInstallButton installPrompt={installPrompt} installed={pwaInstalled} triggerInstall={triggerInstall} />
+              <LiveStatusBadge fetchStatus={fetchStatus} lastFetch={lastFetch} />
+              <span className="text-gray-500 text-xs">Aktualisiert: {lastRefresh.toLocaleTimeString("de-DE")}</span>
+              <button onClick={refresh} className="bg-orange-500 hover:bg-orange-400 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">🔄 Refresh</button>
+              <button onClick={toggleLang} title="Sprache wechseln" className="text-xs font-semibold px-3 py-1.5 rounded-lg border-2 border-gray-700 bg-gray-900 text-gray-300 hover:text-white hover:border-gray-500 transition-all">{lang === "de" ? "🇩🇪 DE" : "🇬🇧 EN"}</button>
+              <button onClick={toggleSound} title={soundEnabled ? "Sound deaktivieren" : "Sound aktivieren"} className={`text-xs font-semibold px-3 py-1.5 rounded-lg border-2 transition-all ${soundEnabled ? "border-orange-500 bg-orange-500/10 text-orange-400" : "border-gray-700 bg-gray-900 text-gray-500 hover:text-gray-300"}`}>{soundEnabled ? "🔔 Sound AN" : "🔇 Sound AUS"}</button>
+              <button onClick={toggleTheme} title={dark ? "Light Mode" : "Dark Mode"} className="text-xs font-semibold px-3 py-1.5 rounded-lg border-2 border-gray-700 bg-gray-900 text-gray-300 hover:text-white hover:border-gray-500 transition-all">{dark ? "☀️ Light" : "🌙 Dark"}</button>
             </div>
           </div>
-          {/* Condition-Filter */}
-          <div>
-            <p className="text-gray-600 text-xs font-bold uppercase tracking-widest mb-2">⚡ Condition</p>
-            <div className="flex flex-wrap gap-1.5">
-              {conditions.map(c => {
-                const meta = getMeta(c);
-                const isAll = c === "all";
-                const active = filter === c;
-                return (
-                  <button
-                    key={c}
-                    onClick={() => setFilter(c)}
-                    style={active && !isAll ? { borderColor: meta.color, backgroundColor: meta.color + "22", color: meta.color } : {}}
-                    className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-all whitespace-nowrap ${
-                      active
-                        ? isAll ? "border-orange-500 bg-orange-500/15 text-orange-400" : ""
-                        : "border-gray-700 bg-gray-900 text-gray-500 hover:text-gray-300 hover:border-gray-500"
-                    }`}
-                  >
-                    {!isAll && <span>{meta.icon}</span>}
-                    {isAll ? "⚡ Alle" : c}
-                  </button>
-                );
-              })}
+
+          <StickyCountdownBanner liveData={liveData} favs={favs} />
+
+          {/* Tab Bar */}
+          <div className="border-b border-gray-800 bg-gray-950 sticky top-[73px] z-10">
+            <div className="max-w-3xl mx-auto px-2 pt-2 flex flex-wrap gap-1 pb-0">
+              {[
+                { id: "main",        label: t.tabMain },
+                { id: "schedule",    label: t.tabSchedule },
+                { id: "history",     label: t.tabHistory },
+                { id: "maps",        label: t.tabMaps },
+                { id: "loot",        label: t.tabLoot },
+                { id: "loadout",     label: t.tabLoadout },
+                { id: "session",     label: t.tabSession },
+                { id: "squad",       label: t.tabSquad },
+                { id: "discord",     label: t.tabDiscord },
+                { id: "notes",       label: t.tabNotes },
+                { id: "week",        label: t.tabWeek },
+                { id: "stats",       label: t.tabStats },
+                { id: "exportimport",label: "📦 Export/Import" },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors border-b-2 ${
+                    activeTab === tab.id
+                      ? "border-orange-500 text-orange-400 bg-gray-900"
+                      : "border-transparent text-gray-500 hover:text-gray-300"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
+          </div>
+
+          {/* Content */}
+          <div className="max-w-3xl mx-auto px-4 py-6 flex flex-col gap-6">
+
+            {/* Main Tab */}
+            {activeTab === "main" && (
+              <>
+                {/* Search */}
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none">🔍</span>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    placeholder="Condition oder Karte suchen…"
+                    className="w-full bg-gray-900 border border-gray-700 text-white text-sm rounded-xl pl-9 pr-9 py-2.5 outline-none focus:border-orange-500 placeholder-gray-600 transition-colors"
+                  />
+                  {searchQuery && (
+                    <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-lg leading-none">×</button>
+                  )}
+                </div>
+
+                {/* Filters */}
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <p className="text-gray-600 text-xs font-bold uppercase tracking-widest mb-2">🗺️ Karte</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {maps.map(m => {
+                        const col = MAP_COLORS[m];
+                        const isAll = m === "all";
+                        const active = mapFilter === m;
+                        return (
+                          <button key={m} onClick={() => setMapFilter(m)}
+                            style={active && !isAll ? { borderColor: col, backgroundColor: col + "22", color: col } : {}}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-all whitespace-nowrap ${
+                              active ? isAll ? "border-orange-500 bg-orange-500/15 text-orange-400" : "" : "border-gray-700 bg-gray-900 text-gray-500 hover:text-gray-300 hover:border-gray-500"
+                            }`}>
+                            {isAll ? "🗺️ Alle" : `${MAP_INFO[m]?.icon || "📍"} ${m}`}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-gray-600 text-xs font-bold uppercase tracking-widest mb-2">⚡ Condition</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {conditions.map(c => {
+                        const meta = getMeta(c);
+                        const isAll = c === "all";
+                        const active = filter === c;
+                        return (
+                          <button key={c} onClick={() => setFilter(c)}
+                            style={active && !isAll ? { borderColor: meta.color, backgroundColor: meta.color + "22", color: meta.color } : {}}
+                            className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-all whitespace-nowrap ${
+                              active ? isAll ? "border-orange-500 bg-orange-500/15 text-orange-400" : "" : "border-gray-700 bg-gray-900 text-gray-500 hover:text-gray-300 hover:border-gray-500"
+                            }`}>
+                            {!isAll && <span>{meta.icon}</span>}
+                            {isAll ? "⚡ Alle" : c}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Active Now */}
+                <section>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+                    <h2 className="text-green-400 font-bold text-sm uppercase tracking-widest">Jetzt Aktiv</h2>
+                    <span className="bg-green-400/10 text-green-400 text-xs px-2 py-0.5 rounded-full">{filteredActive.length}</span>
+                  </div>
+                  {filteredActive.length === 0
+                    ? <p className="text-gray-500 text-sm">Keine aktiven Bedingungen für diesen Filter.</p>
+                    : <div className="grid gap-3 sm:grid-cols-2">
+                        {filteredActive.map((item, i) => <ActiveCard key={i} item={item} favs={favs} toggleFav={toggleFav} onToast={addToast} />)}
+                      </div>
+                  }
+                </section>
+
+                {/* Coming Up */}
+                <section>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-orange-400 text-sm">⏳</span>
+                    <h2 className="text-orange-400 font-bold text-sm uppercase tracking-widest">Bald Verfügbar</h2>
+                    <span className="bg-orange-400/10 text-orange-400 text-xs px-2 py-0.5 rounded-full">{filteredUpcoming.length}</span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {filteredUpcoming.length === 0
+                      ? <p className="text-gray-500 text-sm">{t.noUpcoming}</p>
+                      : filteredUpcoming.map((item, i) => <UpcomingRow key={i} item={item} favs={favs} toggleFav={toggleFav} onToast={addToast} />)
+                    }
+                  </div>
+                </section>
+              </>
+            )}
+
+            {activeTab === "schedule" && <NextChanceView favs={favs} toggleFav={toggleFav} onToast={addToast} />}
+            {activeTab === "history" && <HistoryView favs={favs} toggleFav={toggleFav} onToast={addToast} />}
+            {activeTab === "maps" && <MapsView favs={favs} toggleFav={toggleFav} onToast={addToast} />}
+            {activeTab === "loot" && <LootGuideView />}
+            {activeTab === "loadout" && <LoadoutView />}
+            {activeTab === "session" && <SessionPlannerView favs={favs} toggleFav={toggleFav} onToast={addToast} />}
+            {activeTab === "squad" && <SquadView />}
+            {activeTab === "discord" && <DiscordView />}
+            {activeTab === "notes" && <NotesView />}
+            {activeTab === "week" && <WeekView favs={favs} toggleFav={toggleFav} onToast={addToast} />}
+            {activeTab === "stats" && <StatsView />}
+            {activeTab === "exportimport" && <ExportImportView favs={favs} onToast={addToast} />}
+
+            {/* Footer */}
+            <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · ARC Twix v2.7 · {fetchStatus === "live" ? "Live-Daten" : "Fallback-Daten"}</p>
           </div>
         </div>
-
-        {activeTab === "main" && <>
-        {/* Active Now */}
-        <section>
-          <div className="flex items-center gap-2 mb-3">
-            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
-            <h2 className="text-green-400 font-bold text-sm uppercase tracking-widest">Jetzt Aktiv</h2>
-            <span className="bg-green-400/10 text-green-400 text-xs px-2 py-0.5 rounded-full">{filteredActive.length}</span>
-          </div>
-          {filteredActive.length === 0
-            ? <p className="text-gray-500 text-sm">Keine aktiven Bedingungen für diesen Filter.</p>
-            : <div className="grid gap-3 sm:grid-cols-2">
-                {filteredActive.map((item, i) => <ActiveCard key={i} item={item} favs={favs} toggleFav={toggleFav} onToast={addToast} />)}
-              </div>
-          }
-        </section>
-
-        {/* Coming Up */}
-        <section>
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-orange-400 text-sm">⏳</span>
-            <h2 className="text-orange-400 font-bold text-sm uppercase tracking-widest">Bald Verfügbar</h2>
-            <span className="bg-orange-400/10 text-orange-400 text-xs px-2 py-0.5 rounded-full">{filteredUpcoming.length}</span>
-          </div>
-          <div className="flex flex-col gap-2">
-            {filteredUpcoming.length === 0
-              ? <p className="text-gray-500 text-sm">{t.noUpcoming}</p>
-              : filteredUpcoming.map((item, i) => <UpcomingRow key={i} item={item} index={i} favs={favs} toggleFav={toggleFav} onToast={addToast} />)
-            }
-          </div>
-        </section>
-
-        </>
-        }
-        {/* Schedule Tab */}
-        {activeTab === "schedule" && (
-            <NextChanceView favs={favs} toggleFav={toggleFav} onToast={addToast} />
-          )}
-
-        {activeTab === "history" && <HistoryView favs={favs} toggleFav={toggleFav} onToast={addToast} />}
-        {activeTab === "maps" && <MapsView favs={favs} toggleFav={toggleFav} onToast={addToast} />}
-        {activeTab === "loot" && <LootGuideView />}
-        {activeTab === "loadout" && <LoadoutView />}
-        {activeTab === "session" && <SessionPlannerView favs={favs} toggleFav={toggleFav} onToast={addToast} />}
-        {activeTab === "squad" && <SquadView />}
-        {activeTab === "discord" && <DiscordView />}
-        {activeTab === "notes" && <NotesView />}
-        {activeTab === "week" && <WeekView favs={favs} toggleFav={toggleFav} onToast={addToast} />}
-          {activeTab === "stats" && <StatsView />}
-          {activeTab === "exportimport" && <ExportImportView favs={favs} onToast={addToast} />}
-
-        {/* Footer */}
-        <p className="text-center text-gray-600 text-xs">Daten von arcraiders.com/de/map-conditions · ARC Twix v2.6 · {fetchStatus === "live" ? "Live-Daten" : "Fallback-Daten"}</p>
-      </div>
-    </LiveDataContext.Provider>
-    </div>
-  );
-}
+      </LiveDataContext.Provider>
+    );
+  }
